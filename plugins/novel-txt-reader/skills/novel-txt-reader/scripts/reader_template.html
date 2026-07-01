@@ -217,6 +217,7 @@
 
   <div id="fabs">
     <button id="fabTop" title="回到顶部">↑</button>
+    <button id="fabBottom" title="回到底部">↓</button>
     <button id="fabMark" title="添加书签">🔖</button>
   </div>
   <div id="toast"></div>
@@ -492,6 +493,7 @@
     document.getElementById('prevBtn').onclick=prev;
     document.getElementById('nextBtn').onclick=next;
     document.getElementById('fabTop').onclick=function(){ window.scrollTo({top:0,behavior:'smooth'}); };
+    document.getElementById('fabBottom').onclick=function(){ var el=scroller(); window.scrollTo({top:el.scrollHeight,behavior:'smooth'}); };
     document.getElementById('fabMark').onclick=addMark;
 
     document.getElementById('tocList').onclick=function(ev){

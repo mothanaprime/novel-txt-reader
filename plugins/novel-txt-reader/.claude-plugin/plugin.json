@@ -1,6 +1,6 @@
 {
   "name": "novel-txt-reader",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Turn a .txt novel into a lightweight offline HTML reader — auto-detect encoding (UTF-8/UTF-16/GBK/GB18030/Big5), split by chapter into one file each, with an automatic bookmark that resumes on reopen, manual bookmarks, table of contents + search, and adjustable themes and fonts.",
   "author": { "name": "mothanaprime" },
   "homepage": "https://github.com/mothanaprime/novel-txt-reader",
