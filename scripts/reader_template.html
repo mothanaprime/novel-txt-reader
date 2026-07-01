@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>离线阅读器</title>
+<style>
+  :root{
+    --font-sans: system-ui,"Microsoft YaHei","PingFang SC","Hiragino Sans GB","Noto Sans SC",sans-serif;
+    --font-serif: Georgia,"Songti SC","SimSun","STSong","Noto Serif SC",serif;
+    --fs: 20px;
+    --lh: 1.9;
+    --maxw: 720px;
+    --font: var(--font-sans);
+    --bg:#f3f1ea; --fg:#2b2b2b; --soft:#6b6b6b; --panel:#ffffff;
+    --line:#e2ded2; --accent:#8a6d3b; --accentbg:#f0e6d2; --bar:#cfc7b3;
+    --shadow:0 8px 30px rgba(0,0,0,.18);
+  }
+  [data-theme="eye"]{ --bg:#c8e6c9; --fg:#20321f; --soft:#4c6149; --panel:#dcefdc;
+    --line:#b2d4b3; --accent:#356a3a; --accentbg:#bfe0c0; --bar:#95c197; --shadow:0 8px 30px rgba(0,0,0,.14);}
+  [data-theme="night"]{ --bg:#16171a; --fg:#c3c3c0; --soft:#8a8a86; --panel:#232427;
+    --line:#33343a; --accent:#c9a26b; --accentbg:#2d2a24; --bar:#3a3b40; --shadow:0 8px 30px rgba(0,0,0,.5);}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
+    font-family:var(--font);transition:background .25s,color .25s;}
+  body{padding-top:52px;}
+  /* top bar */
+  #topbar{position:fixed;top:0;left:0;right:0;height:52px;z-index:40;
+    display:flex;align-items:center;gap:8px;padding:0 12px;
+    background:var(--panel);border-bottom:1px solid var(--line);
+    box-shadow:0 1px 8px rgba(0,0,0,.06);}
+  #topbar .tbtn{border:0;background:transparent;color:var(--fg);cursor:pointer;
+    font-size:15px;padding:8px 10px;border-radius:8px;white-space:nowrap;font-family:inherit;}
+  #topbar .tbtn:hover{background:var(--accentbg);}
+  #titleWrap{flex:1;min-width:0;text-align:center;line-height:1.15;overflow:hidden;}
+  #bookTitle{font-weight:700;font-size:15px;}
+  #curChap{display:block;font-size:12px;color:var(--soft);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #progressbar{position:fixed;top:52px;left:0;right:0;height:3px;background:transparent;z-index:39;}
+  #progressfill{height:100%;width:0;background:var(--accent);transition:width .15s;}
+  /* content */
+  #content{max-width:var(--maxw);margin:0 auto;padding:26px 20px 120px;}
+  #article h1{font-size:calc(var(--fs) + 6px);font-weight:700;margin:6px 0 26px;
+    line-height:1.4;text-align:center;}
+  #chGroup{display:block;text-align:center;font-size:13px;color:var(--soft);
+    font-weight:400;margin-bottom:20px;}
+  #article p{font-size:var(--fs);line-height:var(--lh);margin:0 0 1.05em;
+    text-indent:2em;text-align:justify;letter-spacing:.2px;}
+  #pager{display:flex;gap:10px;justify-content:space-between;margin-top:40px;}
+  #pager button{flex:1;padding:14px 8px;border:1px solid var(--line);background:var(--panel);
+    color:var(--fg);border-radius:10px;cursor:pointer;font-size:15px;font-family:inherit;transition:.15s;}
+  #pager button:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+  #pager button:disabled{opacity:.4;cursor:default;}
+  #pager #tocBtn2{flex:0 0 90px;}
+  /* overlay + panels */
+  #overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;opacity:0;
+    pointer-events:none;transition:opacity .2s;}
+  #overlay.show{opacity:1;pointer-events:auto;}
+  .panel{position:fixed;top:0;bottom:0;width:min(88vw,380px);background:var(--panel);
+    z-index:60;box-shadow:var(--shadow);display:flex;flex-direction:column;
+    transition:transform .25s ease;}
+  #tocPanel{left:0;transform:translateX(-102%);}
+  #marksPanel,#setPanel{right:0;transform:translateX(102%);}
+  #tocPanel.open,#marksPanel.open,#setPanel.open{transform:translateX(0);}
+  .panelHead{display:flex;align-items:center;justify-content:space-between;
+    padding:16px 18px;border-bottom:1px solid var(--line);font-weight:700;font-size:16px;}
+  .panelHead button{border:0;background:transparent;font-size:20px;color:var(--soft);
+    cursor:pointer;line-height:1;}
+  #tocSearch{margin:12px 16px;padding:10px 12px;border:1px solid var(--line);
+    border-radius:10px;background:var(--bg);color:var(--fg);font-size:14px;font-family:inherit;}
+  #tocList{overflow-y:auto;flex:1;padding:0 8px 20px;}
+  .volhd{position:sticky;top:0;background:var(--panel);padding:12px 10px 6px;
+    font-size:13px;font-weight:700;color:var(--accent);border-bottom:1px solid var(--line);}
+  .tocItem{display:flex;justify-content:space-between;gap:8px;padding:9px 12px;
+    border-radius:8px;cursor:pointer;font-size:14.5px;color:var(--fg);}
+  .tocItem:hover{background:var(--accentbg);}
+  .tocItem.active{background:var(--accentbg);color:var(--accent);font-weight:700;}
+  .tocItem .wc{color:var(--soft);font-size:12px;flex:0 0 auto;}
+  /* marks panel */
+  #marksBody{overflow-y:auto;flex:1;padding:14px 16px 24px;}
+  .autoBox{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px;
+    background:var(--accentbg);}
+  .autoBox .lbl{font-size:12px;color:var(--soft);margin-bottom:6px;}
+  .autoBox .ttl{font-size:15px;font-weight:700;margin-bottom:10px;line-height:1.4;}
+  .btnFull{display:block;width:100%;padding:11px;border:0;border-radius:9px;
+    background:var(--accent);color:#fff;font-size:14.5px;cursor:pointer;font-family:inherit;}
+  .btnFull:hover{filter:brightness(1.08);}
+  .addBtn{display:block;width:100%;padding:11px;border:1px dashed var(--accent);
+    border-radius:9px;background:transparent;color:var(--accent);font-size:14.5px;
+    cursor:pointer;margin-bottom:16px;font-family:inherit;}
+  .addBtn:hover{background:var(--accentbg);}
+  .markCard{border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin-bottom:10px;position:relative;}
+  .markCard .mt{font-size:14.5px;font-weight:700;margin-bottom:4px;padding-right:22px;line-height:1.4;}
+  .markCard .ms{font-size:13px;color:var(--soft);line-height:1.5;margin-bottom:8px;}
+  .markCard .mmeta{font-size:11px;color:var(--soft);}
+  .markCard .go{margin-top:8px;padding:7px 14px;border:1px solid var(--accent);
+    background:transparent;color:var(--accent);border-radius:8px;cursor:pointer;font-size:13px;font-family:inherit;}
+  .markCard .go:hover{background:var(--accentbg);}
+  .markCard .del{position:absolute;top:10px;right:10px;border:0;background:transparent;
+    color:var(--soft);cursor:pointer;font-size:16px;line-height:1;}
+  .markCard .del:hover{color:#c0392b;}
+  .empty{color:var(--soft);font-size:13.5px;text-align:center;padding:24px 10px;line-height:1.6;}
+  .ioRow{display:flex;gap:10px;padding:14px 16px;border-top:1px solid var(--line);}
+  .ioRow button{flex:1;padding:10px;border:1px solid var(--line);background:var(--bg);
+    color:var(--fg);border-radius:9px;cursor:pointer;font-size:13.5px;font-family:inherit;}
+  .ioRow button:hover{border-color:var(--accent);color:var(--accent);}
+  /* settings */
+  #setBody{padding:18px 18px 24px;overflow-y:auto;}
+  .setRow{margin-bottom:22px;}
+  .setRow .cap{font-size:13px;color:var(--soft);margin-bottom:10px;}
+  .segbtns{display:flex;gap:8px;flex-wrap:wrap;}
+  .seg{flex:1;min-width:70px;padding:11px 6px;border:1px solid var(--line);border-radius:10px;
+    background:var(--bg);color:var(--fg);cursor:pointer;font-size:14px;text-align:center;font-family:inherit;}
+  .seg.on{border-color:var(--accent);background:var(--accentbg);color:var(--accent);font-weight:700;}
+  .stepper{display:flex;align-items:center;gap:14px;}
+  .stepper button{width:44px;height:44px;border:1px solid var(--line);border-radius:10px;
+    background:var(--bg);color:var(--fg);font-size:20px;cursor:pointer;font-family:inherit;}
+  .stepper button:hover{border-color:var(--accent);color:var(--accent);}
+  .stepper .val{flex:1;text-align:center;font-size:15px;}
+  /* fabs */
+  #fabs{position:fixed;right:18px;bottom:22px;z-index:35;display:flex;flex-direction:column;gap:12px;}
+  #fabs button{width:48px;height:48px;border-radius:50%;border:1px solid var(--line);
+    background:var(--panel);color:var(--fg);font-size:19px;cursor:pointer;box-shadow:var(--shadow);
+    display:flex;align-items:center;justify-content:center;transition:.15s;font-family:inherit;}
+  #fabs button:hover{color:var(--accent);border-color:var(--accent);}
+  #fabMark.saved{color:var(--accent);border-color:var(--accent);background:var(--accentbg);}
+  /* toast */
+  #toast{position:fixed;left:50%;bottom:40px;transform:translateX(-50%) translateY(20px);
+    background:var(--fg);color:var(--bg);padding:11px 20px;border-radius:24px;font-size:14px;
+    z-index:80;opacity:0;pointer-events:none;transition:.25s;white-space:nowrap;}
+  #toast.show{opacity:.95;transform:translateX(-50%) translateY(0);}
+  #loadErr{max-width:600px;margin:60px auto;padding:24px;border:1px solid var(--line);
+    border-radius:12px;line-height:1.8;font-size:15px;display:none;}
+  @media (max-width:520px){ #topbar .tbtn{padding:8px 7px;font-size:14px;} #content{padding:20px 16px 120px;} }
+</style>
+</head>
+<body>
+  <header id="topbar">
+    <button class="tbtn" id="btnToc">☰ 目录</button>
+    <div id="titleWrap">
+      <span id="bookTitle"></span>
+      <span id="curChap">加载中…</span>
+    </div>
+    <button class="tbtn" id="btnMarks">🔖 书签</button>
+    <button class="tbtn" id="btnSettings">Aa</button>
+  </header>
+  <div id="progressbar"><div id="progressfill"></div></div>
+
+  <main id="content">
+    <div id="loadErr"></div>
+    <article id="article"></article>
+    <nav id="pager">
+      <button id="prevBtn">← 上一章</button>
+      <button id="tocBtn2">目录</button>
+      <button id="nextBtn">下一章 →</button>
+    </nav>
+  </main>
+
+  <div id="overlay"></div>
+
+  <aside id="tocPanel" class="panel">
+    <div class="panelHead"><span>目录</span><button data-close>✕</button></div>
+    <input id="tocSearch" placeholder="搜索章节名…">
+    <div id="tocList"></div>
+  </aside>
+
+  <aside id="marksPanel" class="panel">
+    <div class="panelHead"><span>书签</span><button data-close>✕</button></div>
+    <div id="marksBody"></div>
+    <div class="ioRow">
+      <button id="exportBtn">导出进度</button>
+      <button id="importBtn">导入进度</button>
+      <input id="importFile" type="file" accept="application/json,.json" style="display:none">
+    </div>
+  </aside>
+
+  <aside id="setPanel" class="panel">
+    <div class="panelHead"><span>阅读设置</span><button data-close>✕</button></div>
+    <div id="setBody">
+      <div class="setRow">
+        <div class="cap">主题</div>
+        <div class="segbtns" id="themeSeg">
+          <button class="seg" data-theme="day">日间</button>
+          <button class="seg" data-theme="eye">护眼</button>
+          <button class="seg" data-theme="night">夜间</button>
+        </div>
+      </div>
+      <div class="setRow">
+        <div class="cap">字体</div>
+        <div class="segbtns" id="fontSeg">
+          <button class="seg" data-font="sans">黑体</button>
+          <button class="seg" data-font="serif">宋体</button>
+        </div>
+      </div>
+      <div class="setRow">
+        <div class="cap">字号 <span id="fsVal"></span></div>
+        <div class="stepper"><button id="fsMinus">−</button><div class="val" id="fsBar"></div><button id="fsPlus">＋</button></div>
+      </div>
+      <div class="setRow">
+        <div class="cap">行距</div>
+        <div class="segbtns" id="lhSeg">
+          <button class="seg" data-lh="1.6">紧凑</button>
+          <button class="seg" data-lh="1.9">适中</button>
+          <button class="seg" data-lh="2.2">宽松</button>
+        </div>
+      </div>
+      <div class="setRow">
+        <div class="cap">页面宽度</div>
+        <div class="segbtns" id="wSeg">
+          <button class="seg" data-w="600">窄</button>
+          <button class="seg" data-w="720">中</button>
+          <button class="seg" data-w="900">宽</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div id="fabs">
+    <button id="fabTop" title="回到顶部">↑</button>
+    <button id="fabMark" title="添加书签">🔖</button>
+  </div>
+  <div id="toast"></div>
+
+  <!-- catalog loads first (blocking), then the app runs -->
+  <script src="data/catalog.js"></script>
+  <script>
+  (function(){
+    "use strict";
+    var CAT = window.__CATALOG__;
+    var article = document.getElementById('article');
+    var K = { auto:'fanren.v1.auto', marks:'fanren.v1.marks', set:'fanren.v1.settings' };
+
+    if(!CAT || !CAT.entries){
+      var e=document.getElementById('loadErr');
+      e.style.display='block';
+      e.innerHTML='<b>无法载入章节目录。</b><br>请确认 <code>开始阅读.html</code> 与 <code>data</code> 文件夹在同一个位置，'+
+                  '并使用浏览器（Chrome / Edge）打开本文件。';
+      return;
+    }
+
+    /* ---------- storage helpers ---------- */
+    function load(k,d){ try{ var v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(_){ return d; } }
+    function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(_){ } }
+
+    /* ---------- settings ---------- */
+    var defaults={theme:'day',font:'sans',fs:20,lh:1.9,w:720};
+    var settings=Object.assign({},defaults,load(K.set,{}));
+    function applySettings(){
+      document.documentElement.setAttribute('data-theme',settings.theme);
+      var r=document.documentElement.style;
+      r.setProperty('--font', settings.font==='serif'?'var(--font-serif)':'var(--font-sans)');
+      r.setProperty('--fs', settings.fs+'px');
+      r.setProperty('--lh', settings.lh);
+      r.setProperty('--maxw', settings.w+'px');
+      // reflect UI
+      mark('#themeSeg .seg','data-theme',settings.theme);
+      mark('#fontSeg .seg','data-font',settings.font);
+      mark('#lhSeg .seg','data-lh',String(settings.lh));
+      mark('#wSeg .seg','data-w',String(settings.w));
+      var fb=document.getElementById('fsBar'); if(fb) fb.textContent=settings.fs+' px';
+    }
+    function mark(sel,attr,val){
+      document.querySelectorAll(sel).forEach(function(b){
+        b.classList.toggle('on', b.getAttribute(attr)===val);
+      });
+    }
+    function saveSettings(){ save(K.set,settings); }
+
+    /* ---------- chapter lazy loader ---------- */
+    var _resolve=null;
+    window.__CH__=function(obj){ if(_resolve){ var r=_resolve; _resolve=null; r(obj); } };
+    function fetchChapter(i){
+      return new Promise(function(res,rej){
+        _resolve=res;
+        var old=document.getElementById('chScript'); if(old) old.remove();
+        var s=document.createElement('script');
+        s.id='chScript'; s.charset='utf-8';
+        s.src='data/ch_'+String(i).padStart(4,'0')+'.js';
+        s.onerror=function(){ _resolve=null; rej(new Error('load '+i)); };
+        document.head.appendChild(s);
+      });
+    }
+
+    /* ---------- rendering ---------- */
+    var cur=-1, curObj=null;
+    function renderChapter(obj){
+      curObj=obj;
+      var html='';
+      if(obj.v && obj.v!=='正文') html+='<span id="chGroup">'+esc(obj.v)+'</span>';
+      html+='<h1>'+esc(obj.t)+'</h1>';
+      for(var k=0;k<obj.p.length;k++){
+        var para=obj.p[k].split('\n');
+        for(var j=0;j<para.length;j++){
+          if(para[j]) html+='<p>'+esc(para[j])+'</p>';
+        }
+      }
+      article.innerHTML=html;
+      document.getElementById('curChap').textContent=obj.t;
+      updatePager();
+      highlightToc();
+    }
+    function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    function scroller(){ return document.scrollingElement||document.documentElement; }
+    function getRatio(){ var el=scroller(); var m=el.scrollHeight-el.clientHeight; return m>0?el.scrollTop/m:0; }
+    function setRatio(r){ var el=scroller(); var m=el.scrollHeight-el.clientHeight; window.scrollTo(0,Math.max(0,Math.min(m,r*m))); }
+
+    var busy=false;
+    function openChapter(i,ratio){
+      if(i<0||i>=CAT.entries.length) return Promise.resolve();
+      if(busy) return Promise.resolve();
+      busy=true;
+      return fetchChapter(i).then(function(obj){
+        cur=i;
+        renderChapter(obj);
+        requestAnimationFrame(function(){ requestAnimationFrame(function(){
+          setRatio(ratio||0);
+          busy=false;
+          saveAuto();
+          updateProgress();
+        });});
+      }).catch(function(){
+        busy=false;
+        article.innerHTML='<p style="text-align:center;color:var(--soft)">本章加载失败，请重试。</p>';
+      });
+    }
+    function prev(){ if(cur>0) openChapter(cur-1,0); }
+    function next(){ if(cur<CAT.entries.length-1) openChapter(cur+1,0); }
+    function updatePager(){
+      document.getElementById('prevBtn').disabled = cur<=0;
+      document.getElementById('nextBtn').disabled = cur>=CAT.entries.length-1;
+    }
+
+    /* ---------- progress ---------- */
+    function updateProgress(){
+      var total=CAT.entries.length-1;
+      var pct=total>0 ? ((cur+getRatio())/total)*100 : 0;
+      pct=Math.max(0,Math.min(100,pct));
+      document.getElementById('progressfill').style.width=pct.toFixed(2)+'%';
+    }
+
+    /* ---------- auto bookmark ---------- */
+    var lastSave=0;
+    function saveAuto(){
+      if(cur<0) return;
+      save(K.auto,{i:cur,r:getRatio(),t:Date.now(),title:curObj?curObj.t:''});
+    }
+    function throttledSave(){
+      var now=Date.now();
+      if(now-lastSave>400){ lastSave=now; saveAuto(); updateProgress(); }
+    }
+
+    /* ---------- manual bookmarks ---------- */
+    var marks=load(K.marks,[]);
+    function firstVisibleSnippet(){
+      var ps=article.getElementsByTagName('p');
+      var top=52;
+      for(var k=0;k<ps.length;k++){
+        var r=ps[k].getBoundingClientRect();
+        if(r.bottom>top+4){ return ps[k].textContent.slice(0,26); }
+      }
+      return ps.length?ps[0].textContent.slice(0,26):'';
+    }
+    function addMark(){
+      if(cur<0) return;
+      marks.unshift({id:Date.now(),i:cur,r:getRatio(),title:curObj?curObj.t:('第'+cur+'节'),snip:firstVisibleSnippet()});
+      save(K.marks,marks);
+      renderMarks();
+      toast('已添加书签');
+      var fm=document.getElementById('fabMark'); fm.classList.add('saved');
+      setTimeout(function(){ fm.classList.remove('saved'); },1200);
+    }
+    function delMark(id){
+      marks=marks.filter(function(m){ return m.id!==id; });
+      save(K.marks,marks); renderMarks();
+    }
+    function renderMarks(){
+      var box=document.getElementById('marksBody');
+      var auto=load(K.auto,null);
+      var h='';
+      if(auto){
+        h+='<div class="autoBox"><div class="lbl">⏱ 自动书签 · 上次读到</div>'+
+           '<div class="ttl">'+esc(auto.title||'')+'</div>'+
+           '<button class="btnFull" data-jump="'+auto.i+'" data-r="'+(auto.r||0)+'">继续阅读</button></div>';
+      }
+      h+='<button class="addBtn" id="addMarkInline">＋ 在当前位置添加书签</button>';
+      if(!marks.length){
+        h+='<div class="empty">还没有手动书签。<br>阅读时点右下角 🔖 或此处按钮即可标记当前位置。</div>';
+      }else{
+        for(var k=0;k<marks.length;k++){
+          var m=marks[k];
+          h+='<div class="markCard"><button class="del" data-del="'+m.id+'" title="删除">✕</button>'+
+             '<div class="mt">'+esc(m.title)+'</div>'+
+             '<div class="ms">'+esc(m.snip||'')+'…</div>'+
+             '<div class="mmeta">'+fmtTime(m.id)+'</div>'+
+             '<button class="go" data-jump="'+m.i+'" data-r="'+m.r+'">跳转到此处</button></div>';
+        }
+      }
+      box.innerHTML=h;
+    }
+    function fmtTime(ts){
+      var d=new Date(ts),p=function(n){return(n<10?'0':'')+n;};
+      return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+    }
+
+    /* ---------- TOC ---------- */
+    function buildToc(){
+      var list=document.getElementById('tocList');
+      var h='',lastV=null;
+      for(var k=0;k<CAT.entries.length;k++){
+        var e=CAT.entries[k];
+        if(e.v!==lastV){ h+='<div class="volhd">'+esc(e.v)+'</div>'; lastV=e.v; }
+        h+='<div class="tocItem" data-idx="'+e.i+'"><span class="tt">'+esc(e.t)+'</span>'+
+           '<span class="wc">'+(e.n>=1000?(Math.round(e.n/100)/10)+'k':e.n)+'字</span></div>';
+      }
+      list.innerHTML=h;
+    }
+    function highlightToc(){
+      document.querySelectorAll('#tocList .tocItem').forEach(function(it){
+        var on=+it.getAttribute('data-idx')===cur;
+        it.classList.toggle('active',on);
+        if(on && document.getElementById('tocPanel').classList.contains('open')){
+          it.scrollIntoView({block:'center'});
+        }
+      });
+    }
+    function filterToc(q){
+      q=q.trim();
+      document.querySelectorAll('#tocList .tocItem').forEach(function(it){
+        var t=it.querySelector('.tt').textContent;
+        it.style.display=(!q||t.indexOf(q)>=0)?'':'none';
+      });
+      document.querySelectorAll('#tocList .volhd').forEach(function(v){
+        v.style.display=q?'none':'';
+      });
+    }
+
+    /* ---------- panels ---------- */
+    var overlay=document.getElementById('overlay');
+    function openPanel(id){
+      closePanels();
+      document.getElementById(id).classList.add('open');
+      overlay.classList.add('show');
+      if(id==='marksPanel') renderMarks();
+      if(id==='tocPanel') highlightToc();
+    }
+    function closePanels(){
+      ['tocPanel','marksPanel','setPanel'].forEach(function(p){ document.getElementById(p).classList.remove('open'); });
+      overlay.classList.remove('show');
+    }
+
+    /* ---------- export / import ---------- */
+    function exportData(){
+      var data={app:'fanren-reader',v:1,auto:load(K.auto,null),marks:marks,settings:settings,exported:Date.now()};
+      var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+      var a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='凡人修仙传-阅读进度.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      toast('进度已导出');
+    }
+    function importData(file){
+      var fr=new FileReader();
+      fr.onload=function(){
+        try{
+          var d=JSON.parse(fr.result);
+          if(d.auto) save(K.auto,d.auto);
+          if(d.marks){ marks=d.marks; save(K.marks,marks); }
+          if(d.settings){ settings=Object.assign({},defaults,d.settings); saveSettings(); applySettings(); }
+          renderMarks(); toast('进度已导入');
+          if(d.auto) openChapter(d.auto.i,d.auto.r||0);
+        }catch(_){ toast('文件无法识别'); }
+      };
+      fr.readAsText(file);
+    }
+
+    /* ---------- toast ---------- */
+    var toastEl=document.getElementById('toast'),toastT=null;
+    function toast(msg){
+      toastEl.textContent=msg; toastEl.classList.add('show');
+      clearTimeout(toastT); toastT=setTimeout(function(){ toastEl.classList.remove('show'); },1600);
+    }
+
+    /* ---------- events ---------- */
+    document.getElementById('btnToc').onclick=function(){ openPanel('tocPanel'); };
+    document.getElementById('tocBtn2').onclick=function(){ openPanel('tocPanel'); };
+    document.getElementById('btnMarks').onclick=function(){ openPanel('marksPanel'); };
+    document.getElementById('btnSettings').onclick=function(){ openPanel('setPanel'); };
+    overlay.onclick=closePanels;
+    document.querySelectorAll('[data-close]').forEach(function(b){ b.onclick=closePanels; });
+
+    document.getElementById('prevBtn').onclick=prev;
+    document.getElementById('nextBtn').onclick=next;
+    document.getElementById('fabTop').onclick=function(){ window.scrollTo({top:0,behavior:'smooth'}); };
+    document.getElementById('fabMark').onclick=addMark;
+
+    document.getElementById('tocList').onclick=function(ev){
+      var it=ev.target.closest('.tocItem'); if(!it) return;
+      closePanels(); openChapter(+it.getAttribute('data-idx'),0);
+    };
+    document.getElementById('tocSearch').oninput=function(){ filterToc(this.value); };
+
+    document.getElementById('marksBody').onclick=function(ev){
+      var t=ev.target;
+      if(t.id==='addMarkInline'){ addMark(); return; }
+      if(t.hasAttribute('data-del')){ delMark(+t.getAttribute('data-del')); return; }
+      var jb=t.closest('[data-jump]');
+      if(jb){ closePanels(); openChapter(+jb.getAttribute('data-jump'),parseFloat(jb.getAttribute('data-r'))||0); }
+    };
+
+    document.getElementById('exportBtn').onclick=exportData;
+    document.getElementById('importBtn').onclick=function(){ document.getElementById('importFile').click(); };
+    document.getElementById('importFile').onchange=function(){ if(this.files[0]) importData(this.files[0]); this.value=''; };
+
+    // settings interactions
+    document.getElementById('themeSeg').onclick=function(ev){ var b=ev.target.closest('.seg'); if(!b)return; settings.theme=b.getAttribute('data-theme'); applySettings(); saveSettings(); };
+    document.getElementById('fontSeg').onclick=function(ev){ var b=ev.target.closest('.seg'); if(!b)return; settings.font=b.getAttribute('data-font'); applySettings(); saveSettings(); };
+    document.getElementById('lhSeg').onclick=function(ev){ var b=ev.target.closest('.seg'); if(!b)return; settings.lh=parseFloat(b.getAttribute('data-lh')); applySettings(); saveSettings(); };
+    document.getElementById('wSeg').onclick=function(ev){ var b=ev.target.closest('.seg'); if(!b)return; settings.w=parseInt(b.getAttribute('data-w'),10); applySettings(); saveSettings(); };
+    document.getElementById('fsPlus').onclick=function(){ settings.fs=Math.min(32,settings.fs+1); applySettings(); saveSettings(); };
+    document.getElementById('fsMinus').onclick=function(){ settings.fs=Math.max(14,settings.fs-1); applySettings(); saveSettings(); };
+
+    // keyboard
+    document.addEventListener('keydown',function(e){
+      if(e.target.tagName==='INPUT') return;
+      if(e.key==='ArrowLeft'){ prev(); }
+      else if(e.key==='ArrowRight'){ next(); }
+      else if(e.key==='b'||e.key==='B'){ addMark(); }
+    });
+
+    // save position on scroll / exit
+    window.addEventListener('scroll',throttledSave,{passive:true});
+    window.addEventListener('beforeunload',saveAuto);
+    window.addEventListener('pagehide',saveAuto);
+    document.addEventListener('visibilitychange',function(){ if(document.hidden) saveAuto(); });
+    setInterval(saveAuto,5000);
+
+    /* ---------- boot ---------- */
+    document.title=(CAT.title||'离线阅读器')+' · 阅读器';
+    document.getElementById('bookTitle').textContent=CAT.title||'';
+    applySettings();
+    buildToc();
+    var auto=load(K.auto,null);
+    if(auto && auto.i!=null && auto.i<CAT.entries.length){
+      openChapter(auto.i,auto.r||0).then(function(){ toast('已回到上次阅读位置'); });
+    }else{
+      openChapter(0,0);
+    }
+   })();
+  </script>
+</body>
+</html>
