@@ -31,9 +31,11 @@ The converter needs no third-party Python packages, Node, network service, or cr
 Your agent host has its own authentication requirements. Once generated, the reader
 needs only a browser; keep its output folder together.
 
-Version **0.1.2 is unreleased**. Commands that install from GitHub use the selected remote
-revision, not unpushed local changes. To try an unreleased checkout, use its local
-marketplace path or copy the skill directory from that checkout.
+This guide covers **0.1.2**. Use the
+[v0.1.2 release](https://github.com/mothanaprime/novel-txt-reader/releases/tag/v0.1.2)
+for versioned source. Commands that install from GitHub use the selected remote revision;
+`main` can advance after a release. To use a specific local checkout, provide its local
+marketplace path or copy its complete skill directory.
 
 ## Claude Code / Cowork
 

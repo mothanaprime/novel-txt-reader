@@ -8,8 +8,8 @@
 它包含一份通用 skill 和 Python 脚本，同时提供 Claude 兼容插件包装。
 **Claude、Codex、DeepSeek 官方 Harness（DSH）共用同一套转换代码**。
 
-本文对应 **0.1.2，尚未正式发布**。从 GitHub 默认安装得到的是所选远端版本；修复分支
-合并前，不能把这里的新功能说明当作 `main` 已经包含这些改动。
+本文对应 **0.1.2**，固定版本源码可从 [v0.1.2 Release](https://github.com/mothanaprime/novel-txt-reader/releases/tag/v0.1.2)
+获取。从 `main` 安装会跟随默认分支的更新；需要保留特定版本时，请使用对应标签或发布包。
 
 ## 选择使用方式
 

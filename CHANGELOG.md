@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2 — Unreleased
+## 0.1.2 — 2026-10-09
 
 - Validate a complete progress backup before changing saved data, reject wrong-book
   backups, and render imported bookmark values safely.

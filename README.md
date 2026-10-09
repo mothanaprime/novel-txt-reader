@@ -25,9 +25,10 @@ skill setup, prerequisites, official sources, and what has actually been tested.
 skill 目录；DSH 不通过 Claude 的插件清单安装。生成阅读器需要 Python，阅读只需浏览器。
 
 This repo is also a **plugin marketplace**: `.claude-plugin/marketplace.json` lists
-`plugins/novel-txt-reader`, which contains the `novel-txt-reader` skill. Version 0.1.2
-is currently **unreleased**; installing from GitHub gets the selected remote revision,
-not changes that exist only in a local checkout.
+`plugins/novel-txt-reader`, which contains the `novel-txt-reader` skill. This guide covers
+**0.1.2**. Use the [v0.1.2 release](https://github.com/mothanaprime/novel-txt-reader/releases/tag/v0.1.2)
+for versioned source; installing from `main` follows the repository's current default
+branch, which can advance after a release.
 
 ## Install
 

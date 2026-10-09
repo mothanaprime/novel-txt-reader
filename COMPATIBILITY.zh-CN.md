@@ -25,7 +25,7 @@ plugins/novel-txt-reader/skills/novel-txt-reader/
 
 请复制**整个技能文件夹**，包括 HTML 模板。只复制 `SKILL.md`，或把整个仓库放进技能搜索目录，都不符合所需的目录结构。转换器不需要第三方 Python 包、Node、网络服务或凭据；代理宿主可能有自己的登录要求。生成后只需浏览器即可阅读，请保持输出文件夹完整。
 
-**0.1.2 尚未发布。** 从 GitHub 安装时，获取的是所选远程修订，不能据此认为默认安装已经包含 0.1.2。要试用未发布的检出版本，请使用该检出目录的本地插件市场路径，或从中复制技能文件夹。
+本文对应 **0.1.2**。固定版本源码可从 [v0.1.2 Release](https://github.com/mothanaprime/novel-txt-reader/releases/tag/v0.1.2) 获取。从 GitHub 安装时，获取的是所选远端版本，`main` 可能在发布后继续更新。要使用特定的本地源码版本，请提供它的本地插件市场路径，或复制其中的完整技能文件夹。
 
 ## Claude Code / Cowork
 

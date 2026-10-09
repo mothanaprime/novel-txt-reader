@@ -41,7 +41,7 @@ Ambiguous source encodings need an
 explicit override, such as `--encoding big5`; invalid bytes stop conversion instead of
 being silently replaced.
 
-The unreleased 0.1.2 changes validate progress imports, separate progress by book, preserve normal
-prose and unrelated output files, and protect existing readers from ordinary failed
+Version 0.1.2 validates progress imports, separates progress by book, preserves normal
+prose and unrelated output files, and protects existing readers from ordinary failed
 rebuilds. Back up progress before regenerating an old reader; legacy progress migration
 requires confirmation. See the [repository README](../../README.md) for details and tests.
