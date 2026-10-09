@@ -18,6 +18,10 @@
   errors during rebuilds.
 - Add exact-text Python regression tests, real-browser offline tests, and CI with fixed
   browser-test dependencies.
+- Document Claude, Codex, and official DeepSeek Harness (DSH) setup, including a shared
+  standalone skill installation, host prerequisites, and verification limits.
+- Resolve script paths from the loaded skill directory in the skill instructions,
+  include Windows commands, and distinguish standalone tests from repository-only tests.
 
 ## 0.1.1
 

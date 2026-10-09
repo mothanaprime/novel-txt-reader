@@ -19,8 +19,25 @@ Trigger this skill when the user:
 
 ## How to run
 
+Locate this skill's directory from the loaded `SKILL.md` path (or the host's
+`resourceBase`). Resolve `scripts/build_reader.py` and `scripts/reader_template.html`
+relative to that directory; do not assume the shell is already in it. Use an absolute
+script path and absolute input/output paths when invoking it from another directory.
+
+The host needs Python 3, a shell execution tool, permission to read the input TXT, and
+permission to write the output directory. Use the Python executable available in that
+environment: commonly `python3` on macOS/Linux, or `python` / `py -3` on Windows.
+If Python or file access is unavailable, explain the missing prerequisite instead of
+claiming that a reader was generated.
+
 ```bash
-python3 scripts/build_reader.py "<path/to/book.txt>" "<output_folder>"
+python3 "<absolute-skill-directory>/scripts/build_reader.py" "<absolute-book-path.txt>" "<absolute-output-folder>"
+```
+
+PowerShell example (substitute the real paths):
+
+```powershell
+python "C:\path\to\novel-txt-reader\scripts\build_reader.py" "C:\Books\book.txt" "C:\Books\reader"
 ```
 
 - If `<output_folder>` is omitted, a folder named after the book is created next to the input.
@@ -35,6 +52,27 @@ python3 scripts/build_reader.py "<path/to/book.txt>" "<output_folder>"
   files are preserved. Keep backups for power loss or filesystem failure.
 
 The end user needs **only a web browser** to read — no Python/Node required to read.
+
+## Host compatibility
+
+The converter has no Claude, Codex, or DeepSeek model/API dependency. The surrounding
+host discovers these instructions and runs the local Python script.
+
+- **Claude Code / Cowork:** this skill is included in the repository's Claude-compatible
+  plugin package.
+- **Codex:** load through a compatible plugin marketplace or as a standalone skill.
+- **DeepSeek Harness (DSH):** load as a standalone skill; the Claude plugin manifest is
+  not a DSH plugin. DSH provides the loaded skill directory as `resourceBase`.
+- **Shared standalone setup:** copy this entire `novel-txt-reader` directory to
+  `~/.agents/skills/novel-txt-reader` for Codex and DSH. DSH also accepts
+  `~/.dsh/skills/novel-txt-reader`. For project scope, use
+  `<project-root>/.agents/skills/novel-txt-reader` and open that project in the host.
+
+Keep `SKILL.md`, `scripts/build_reader.py`, and `scripts/reader_template.html` together;
+copying only the instructions or nesting the whole repository under a skill root will
+not provide the expected runnable layout. Ask the host explicitly to use
+`novel-txt-reader` with the input and output paths. A model API alone does not supply
+skill discovery, Python, or filesystem tools.
 
 ## What it produces
 
@@ -100,10 +138,16 @@ stays fast and light even for multi-thousand-chapter books, and it works from `f
 ## Verifying (optional, for developers)
 
 `tests/` contains stdlib Python regression tests and real Playwright/Chromium browser
-checks using synthetic books. From the repository root:
+checks using synthetic books. From this skill's directory, run the standalone Python suite:
 
 ```bash
-python -m unittest discover -s plugins/novel-txt-reader/skills/novel-txt-reader/tests -p "test_*.py" -v
+python3 -m unittest discover -s tests -p "test_*.py" -v
+```
+
+The browser suite also needs the full source repository's `package.json` and test runner;
+these are not part of a standalone skill copy. From the source repository root:
+
+```bash
 npm ci
 npx playwright install chromium
 npm test
@@ -111,4 +155,5 @@ npm test
 
 Use `PYTHON` and `CHROME_EXECUTABLE_PATH` to select existing runtimes. Tests compare
 known Unicode text and saved positions, and cover bad backups, multiple books, failed
-chapter loads, and output rollback. See the root README for the commands and limits.
+chapter loads, and output rollback. Node and Playwright are development dependencies,
+not conversion or reading requirements.

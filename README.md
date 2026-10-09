@@ -1,17 +1,35 @@
 # novel-txt-reader
 
-An installable **Cowork/Claude plugin** (also usable as a standalone skill or script) that
-turns a single, often huge `.txt` novel into a lightweight **offline HTML reader** — split by
-chapter, re-encoded as UTF-8, with **automatic and manual bookmarks**.
+A portable **agent skill and Python script**, packaged as a Claude-compatible plugin,
+that turns a single, often huge `.txt` novel into a lightweight **offline HTML reader** —
+split by chapter, re-encoded as UTF-8, with **automatic and manual bookmarks**.
 
 Built for large Chinese web novels (thousands of chapters), but works for any `.txt` book.
 
-This repo is a **plugin marketplace**: `/.claude-plugin/marketplace.json` lists one plugin,
-`plugins/novel-txt-reader`, which contains the `novel-txt-reader` skill.
+Works with **Claude, Codex, and DeepSeek Harness (DSH)** when the host can run Python
+and access the input/output folders. Conversion does not depend on a particular model.
+
+| Host | How to use it |
+| --- | --- |
+| Claude Code / Cowork | Install the Claude-compatible plugin. |
+| Codex | Use the compatible plugin marketplace, or install the standalone skill. |
+| DeepSeek Harness (DSH) | Install the standalone skill in `.agents/skills` or `.dsh/skills`. |
+| No agent | Run the Python script directly. |
+
+See [COMPATIBILITY.md](COMPATIBILITY.md) for installation commands, shared Codex/DSH
+skill setup, prerequisites, official sources, and what has actually been tested.
+
+中文：Claude、Codex 和 DeepSeek 官方 DSH 都可使用。Codex 与 DSH 可共用一份完整的
+skill 目录；DSH 不通过 Claude 的插件清单安装。生成阅读器需要 Python，阅读只需浏览器。
+
+This repo is also a **plugin marketplace**: `.claude-plugin/marketplace.json` lists
+`plugins/novel-txt-reader`, which contains the `novel-txt-reader` skill. Version 0.1.2
+is currently **unreleased**; installing from GitHub gets the selected remote revision,
+not changes that exist only in a local checkout.
 
 ## Install
 
-### A) As a plugin, from GitHub (recommended)
+### A) Claude Code / Cowork plugin
 
 Add this repo as a marketplace, then install the plugin:
 
@@ -20,10 +38,22 @@ Add this repo as a marketplace, then install the plugin:
 /plugin install novel-txt-reader@novel-txt-reader
 ```
 
-In **Cowork**: open **Settings → Capabilities**, add a plugin/marketplace by URL and point it
-at `https://github.com/mothanaprime/novel-txt-reader`, then enable **novel-txt-reader**.
+In Claude Code, finish the scope/install selection if the command opens a details page.
+In **Cowork**, use the plugin management UI to add
+`https://github.com/mothanaprime/novel-txt-reader`, then install and enable
+**novel-txt-reader**. Menu names can vary by client version.
 
-### B) Use the script directly (no install)
+### B) Codex / DeepSeek Harness (DSH)
+
+Both support the complete `plugins/novel-txt-reader/skills/novel-txt-reader` folder as
+a standalone skill. Copy that folder to `~/.agents/skills/novel-txt-reader` to share it
+between Codex and DSH. Keep `scripts/`, including `reader_template.html`, with `SKILL.md`.
+Then ask the agent to use **novel-txt-reader** with your TXT and output paths.
+
+Codex also supports the Claude-compatible marketplace packaging. See the
+[installation guide](COMPATIBILITY.md) for that route, project-local setup, and DSH details.
+
+### C) Use the script directly (no install)
 
 ```bash
 python3 plugins/novel-txt-reader/skills/novel-txt-reader/scripts/build_reader.py \
@@ -38,7 +68,9 @@ cd plugins/novel-txt-reader/skills/novel-txt-reader
 python3 scripts/build_reader.py examples/sample.txt out/
 ```
 
-No Python packages are required. On Windows, use `python` in place of `python3`.
+These examples run from the repository root or the skill directory after the shown `cd`.
+From elsewhere, use an absolute script path. No Python packages are required. On Windows,
+use a working Python 3 command such as `python` or `py -3` in place of `python3`.
 If encoding cannot be identified confidently, conversion stops before changing an
 existing reader. Specify the source encoding explicitly, for example:
 
@@ -110,6 +142,8 @@ output-folder/
 │           ├── examples/sample.txt
 │           └── tests/                      # Python and browser regressions
 ├── README.md
+├── COMPATIBILITY.md                       # Claude, Codex, and DSH installation
+├── CHANGELOG.md
 └── LICENSE
 ```
 
