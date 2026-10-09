@@ -1,5 +1,7 @@
 # novel-txt-reader
 
+English | [简体中文](README.zh-CN.md)
+
 A portable **agent skill and Python script**, packaged as a Claude-compatible plugin,
 that turns a single, often huge `.txt` novel into a lightweight **offline HTML reader** —
 split by chapter, re-encoded as UTF-8, with **automatic and manual bookmarks**.
@@ -142,7 +144,9 @@ output-folder/
 │           ├── examples/sample.txt
 │           └── tests/                      # Python and browser regressions
 ├── README.md
+├── README.zh-CN.md                         # Chinese usage guide
 ├── COMPATIBILITY.md                       # Claude, Codex, and DSH installation
+├── COMPATIBILITY.zh-CN.md                  # Chinese installation guide
 ├── CHANGELOG.md
 └── LICENSE
 ```
@@ -172,6 +176,15 @@ Chrome instead of downloading Chromium. CI runs the suites on Linux and Windows.
 Tests assert known Unicode text and expected chapter counts, valid progress round trips,
 failed imports preserving stored state, exact saved chapter/scroll restoration under
 unchanged layout, and rebuild rollback. See [CHANGELOG.md](CHANGELOG.md) for the 0.1.2 fixes.
+
+## Branches and releases
+
+Claude, Codex, and DSH use one shared codebase on `main`; they are installation routes,
+not separate product branches. Merge short-lived fix/feature branches through a reviewed,
+passing PR. Before publishing, synchronize the manifest versions and changelog, then tag
+the chosen commit (for example `v0.1.2`) and create its Release. Git history and release
+tags retain older versions. Merging to `main` and publishing a Release are separate steps.
+Keep the English and Chinese documentation together and update both when behavior changes.
 
 ## License
 

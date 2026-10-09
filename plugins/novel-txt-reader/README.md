@@ -1,5 +1,7 @@
 # novel-txt-reader (plugin)
 
+English | [简体中文](README.zh-CN.md)
+
 A portable agent skill, packaged as a Claude-compatible plugin, that turns a plain-text
 `.txt` novel into a lightweight **offline HTML reader** — split by chapter, re-encoded as
 UTF-8, with automatic and manual bookmarks. Usable with Claude, Codex, and DeepSeek

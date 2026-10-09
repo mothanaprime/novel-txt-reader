@@ -1,5 +1,7 @@
 # Host compatibility and installation
 
+English | [简体中文](COMPATIBILITY.zh-CN.md)
+
 **Claude, Codex, and official DeepSeek Harness (DSH) can use this reader.** Its runtime
 is a local Python script with no model API dependency. The host's skill/plugin loader
 determines how to install and invoke it.

@@ -22,6 +22,8 @@
   standalone skill installation, host prerequisites, and verification limits.
 - Resolve script paths from the loaded skill directory in the skill instructions,
   include Windows commands, and distinguish standalone tests from repository-only tests.
+- Add Chinese usage, installation, and plugin guides with language navigation; document
+  the shared main branch and the distinction between merging changes and publishing releases.
 
 ## 0.1.1
 
