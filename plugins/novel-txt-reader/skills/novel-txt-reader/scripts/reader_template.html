@@ -56,12 +56,12 @@
   #overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;opacity:0;
     pointer-events:none;transition:opacity .2s;}
   #overlay.show{opacity:1;pointer-events:auto;}
-  .panel{position:fixed;top:0;bottom:0;width:min(88vw,380px);background:var(--panel);
+  .panel{position:fixed;top:0;bottom:0;width:min(88vw,380px);background:var(--panel);visibility:hidden;
     z-index:60;box-shadow:var(--shadow);display:flex;flex-direction:column;
     transition:transform .25s ease;}
   #tocPanel{left:0;transform:translateX(-102%);}
   #marksPanel,#setPanel{right:0;transform:translateX(102%);}
-  #tocPanel.open,#marksPanel.open,#setPanel.open{transform:translateX(0);}
+  #tocPanel.open,#marksPanel.open,#setPanel.open{transform:translateX(0);visibility:visible;}
   .panelHead{display:flex;align-items:center;justify-content:space-between;
     padding:16px 18px;border-bottom:1px solid var(--line);font-weight:700;font-size:16px;}
   .panelHead button{border:0;background:transparent;font-size:20px;color:var(--soft);
@@ -72,7 +72,9 @@
   .volhd{position:sticky;top:0;background:var(--panel);padding:12px 10px 6px;
     font-size:13px;font-weight:700;color:var(--accent);border-bottom:1px solid var(--line);}
   .tocItem{display:flex;justify-content:space-between;gap:8px;padding:9px 12px;
-    border-radius:8px;cursor:pointer;font-size:14.5px;color:var(--fg);}
+    border-radius:8px;cursor:pointer;font-size:14.5px;color:var(--fg);
+    width:100%;border:0;background:transparent;text-align:left;font-family:inherit;}
+  button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
   .tocItem:hover{background:var(--accentbg);}
   .tocItem.active{background:var(--accentbg);color:var(--accent);font-weight:700;}
   .tocItem .wc{color:var(--soft);font-size:12px;flex:0 0 auto;}
@@ -136,13 +138,13 @@
 </head>
 <body>
   <header id="topbar">
-    <button class="tbtn" id="btnToc">☰ 目录</button>
+    <button class="tbtn" id="btnToc" aria-controls="tocPanel" aria-expanded="false">☰ 目录</button>
     <div id="titleWrap">
       <span id="bookTitle"></span>
       <span id="curChap">加载中…</span>
     </div>
-    <button class="tbtn" id="btnMarks">🔖 书签</button>
-    <button class="tbtn" id="btnSettings">Aa</button>
+    <button class="tbtn" id="btnMarks" aria-controls="marksPanel" aria-expanded="false">🔖 书签</button>
+    <button class="tbtn" id="btnSettings" aria-label="阅读设置" aria-controls="setPanel" aria-expanded="false">Aa</button>
   </header>
   <div id="progressbar"><div id="progressfill"></div></div>
 
@@ -151,21 +153,21 @@
     <article id="article"></article>
     <nav id="pager">
       <button id="prevBtn">← 上一章</button>
-      <button id="tocBtn2">目录</button>
+      <button id="tocBtn2" aria-controls="tocPanel" aria-expanded="false">目录</button>
       <button id="nextBtn">下一章 →</button>
     </nav>
   </main>
 
   <div id="overlay"></div>
 
-  <aside id="tocPanel" class="panel">
-    <div class="panelHead"><span>目录</span><button data-close>✕</button></div>
-    <input id="tocSearch" placeholder="搜索章节名…">
+  <aside id="tocPanel" class="panel" role="dialog" aria-modal="true" aria-label="目录" aria-hidden="true" inert tabindex="-1">
+    <div class="panelHead"><span>目录</span><button data-close aria-label="关闭目录">✕</button></div>
+    <input id="tocSearch" aria-label="搜索章节名" placeholder="搜索章节名…">
     <div id="tocList"></div>
   </aside>
 
-  <aside id="marksPanel" class="panel">
-    <div class="panelHead"><span>书签</span><button data-close>✕</button></div>
+  <aside id="marksPanel" class="panel" role="dialog" aria-modal="true" aria-label="书签" aria-hidden="true" inert tabindex="-1">
+    <div class="panelHead"><span>书签</span><button data-close aria-label="关闭书签">✕</button></div>
     <div id="marksBody"></div>
     <div class="ioRow">
       <button id="exportBtn">导出进度</button>
@@ -174,8 +176,8 @@
     </div>
   </aside>
 
-  <aside id="setPanel" class="panel">
-    <div class="panelHead"><span>阅读设置</span><button data-close>✕</button></div>
+  <aside id="setPanel" class="panel" role="dialog" aria-modal="true" aria-label="阅读设置" aria-hidden="true" inert tabindex="-1">
+    <div class="panelHead"><span>阅读设置</span><button data-close aria-label="关闭阅读设置">✕</button></div>
     <div id="setBody">
       <div class="setRow">
         <div class="cap">主题</div>
@@ -220,335 +222,415 @@
     <button id="fabBottom" title="回到底部">↓</button>
     <button id="fabMark" title="添加书签">🔖</button>
   </div>
-  <div id="toast"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
 
   <!-- catalog loads first (blocking), then the app runs -->
   <script src="data/catalog.js"></script>
   <script>
   (function(){
     "use strict";
-    var CAT = window.__CATALOG__;
-    var article = document.getElementById('article');
-    var K = { auto:'fanren.v1.auto', marks:'fanren.v1.marks', set:'fanren.v1.settings' };
-
-    if(!CAT || !CAT.entries){
-      var e=document.getElementById('loadErr');
-      e.style.display='block';
-      e.innerHTML='<b>无法载入章节目录。</b><br>请确认 <code>开始阅读.html</code> 与 <code>data</code> 文件夹在同一个位置，'+
-                  '并使用浏览器（Chrome / Edge）打开本文件。';
+    var CAT=window.__CATALOG__, article=document.getElementById('article');
+    var toastEl=document.getElementById('toast'),toastT=null;
+    function toast(msg){
+      toastEl.textContent=msg; toastEl.classList.add('show');
+      clearTimeout(toastT); toastT=setTimeout(function(){ toastEl.classList.remove('show'); },2400);
+    }
+    if(!CAT || !Array.isArray(CAT.entries) || !CAT.entries.length ||
+       typeof CAT.bookId!=='string' || !/^[a-f0-9]{64}$/.test(CAT.bookId)){
+      var err=document.getElementById('loadErr');
+      err.style.display='block';
+      err.textContent='无法载入章节目录或书籍标识。请重新生成阅读器，并将“开始阅读.html”与 data 文件夹放在同一个位置，再使用 Chrome / Edge 打开。';
       return;
     }
 
-    /* ---------- storage helpers ---------- */
-    function load(k,d){ try{ var v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(_){ return d; } }
-    function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(_){ } }
+    /* v2 is a single atomic, book-scoped record. Legacy keys are never removed. */
+    var stateKey='novel-txt-reader.v2.'+CAT.bookId;
+    var legacyKeys={auto:'fanren.v1.auto',marks:'fanren.v1.marks',settings:'fanren.v1.settings'};
+    var defaults={theme:'day',font:'sans',fs:20,lh:1.9,w:720};
+    var state={app:'novel-txt-reader',v:2,bookId:CAT.bookId,auto:null,marks:[],settings:Object.assign({},defaults)};
+    var storageLocked=false,storageWarned=false,bootNotice='';
+    var MAX_TIME=8640000000000000,MAX_MARKS=10000;
+    function invalid(){ throw new Error('invalid progress'); }
+    function record(value,required,optional){
+      if(!value || typeof value!=='object' || Array.isArray(value)) invalid();
+      if(!required.every(function(k){return Object.prototype.hasOwnProperty.call(value,k);})) invalid();
+      if(!Object.keys(value).every(function(k){return required.indexOf(k)>=0 || (optional||[]).indexOf(k)>=0;})) invalid();
+    }
+    function timestamp(value){return Number.isSafeInteger(value) && value>=0 && value<=MAX_TIME;}
+    function position(value){
+      if(!Number.isInteger(value.i) || value.i<0 || value.i>=CAT.entries.length ||
+         typeof value.r!=='number' || !Number.isFinite(value.r) || value.r<0 || value.r>1 ||
+         typeof value.title!=='string' || value.title!==CAT.entries[value.i].t) invalid();
+    }
+    function validateAuto(value){
+      if(value===null) return null;
+      record(value,['i','r','t','title']); position(value);
+      if(!timestamp(value.t)) invalid();
+      return {i:value.i,r:value.r,t:value.t,title:value.title};
+    }
+    function validateMarks(value){
+      if(!Array.isArray(value) || value.length>MAX_MARKS) invalid();
+      var ids=new Set();
+      return value.map(function(m){
+        record(m,['id','i','r','title','snip']); position(m);
+        if(!timestamp(m.id) || ids.has(m.id) || typeof m.snip!=='string' || m.snip.length>1000) invalid();
+        ids.add(m.id);
+        return {id:m.id,i:m.i,r:m.r,title:m.title,snip:m.snip};
+      });
+    }
+    function validateSettings(value){
+      record(value,['theme','font','fs','lh','w']);
+      if(['day','eye','night'].indexOf(value.theme)<0 || ['sans','serif'].indexOf(value.font)<0 ||
+         !Number.isInteger(value.fs) || value.fs<14 || value.fs>32 ||
+         [1.6,1.9,2.2].indexOf(value.lh)<0 || [600,720,900].indexOf(value.w)<0) invalid();
+      return {theme:value.theme,font:value.font,fs:value.fs,lh:value.lh,w:value.w};
+    }
+    function validateState(value,isExport){
+      var fields=['app','v','bookId','auto','marks','settings'];
+      if(isExport) fields.push('exported');
+      record(value,fields);
+      if(value.app!=='novel-txt-reader' || value.v!==2 || value.bookId!==CAT.bookId ||
+         (isExport && !timestamp(value.exported))) invalid();
+      return {app:'novel-txt-reader',v:2,bookId:CAT.bookId,
+              auto:validateAuto(value.auto),marks:validateMarks(value.marks),settings:validateSettings(value.settings)};
+    }
+    function validateLegacy(value,isExport){
+      var fields=['auto','marks','settings'];
+      if(isExport) fields=fields.concat(['app','v','exported']);
+      record(value,fields);
+      if(isExport && (value.app!=='fanren-reader' || value.v!==1 || !timestamp(value.exported))) invalid();
+      var migrated={app:'novel-txt-reader',v:2,bookId:CAT.bookId,
+        auto:validateAuto(value.auto),marks:validateMarks(value.marks),settings:validateSettings(value.settings)};
+      // A chapter reference is necessary but not sufficient to identify an old book.
+      if(!migrated.auto && !migrated.marks.length) invalid();
+      return migrated;
+    }
+    function confirmLegacy(){
+      return window.confirm('旧版进度没有书籍标识。章节名称和序号与《'+(CAT.title||'当前书籍')+'》一致，但仍可能来自其他书籍。请确认它属于本书，是否导入？原始旧版记录会保留。');
+    }
+    function persist(next,replaceLocked,quiet){
+      if(storageLocked && !replaceLocked){
+        if(!storageWarned || !quiet){toast('原有进度异常，已保留原记录；请导入有效备份后再保存。');storageWarned=true;}
+        return false;
+      }
+      try{localStorage.setItem(stateKey,JSON.stringify(next));}
+      catch(_){
+        if(!storageWarned || !quiet) toast('保存失败：浏览器存储不可用或空间不足，原进度未被覆盖。');
+        storageWarned=true; return false;
+      }
+      state=next; storageLocked=false; storageWarned=false; return true;
+    }
+    function changed(values){return Object.assign({},state,values);}
+    function loadState(){
+      var raw;
+      try{raw=localStorage.getItem(stateKey);}
+      catch(_){storageLocked=true;bootNotice='无法读取浏览器进度；已暂停保存以保护原记录，阅读仍可继续。';return;}
+      try{
+        if(raw!==null){
+          try{state=validateState(JSON.parse(raw),false);}
+          catch(_){storageLocked=true;bootNotice='已保存的进度格式异常；原记录已保留，请导入有效备份。';}
+          return;
+        }
+        var old={auto:null,marks:[],settings:Object.assign({},defaults)},found=false;
+        Object.keys(legacyKeys).forEach(function(k){
+          var item=localStorage.getItem(legacyKeys[k]);
+          if(item!==null){old[k]=JSON.parse(item);found=true;}
+        });
+        if(found){
+          var migrated;
+          try{migrated=validateLegacy(old,false);}
+          catch(_){bootNotice='发现旧版进度，但无法确认属于本书或格式无效；旧记录已保留。';return;}
+          if(confirmLegacy()){
+            if(persist(migrated,false)) bootNotice='已迁移旧版进度，原始记录仍保留。';
+          }else{bootNotice='未迁移旧版进度，原始记录仍保留。';}
+        }
+      }catch(_){bootNotice='无法读取浏览器进度；阅读仍可继续，原始记录未修改。';}
+    }
 
     /* ---------- settings ---------- */
-    var defaults={theme:'day',font:'sans',fs:20,lh:1.9,w:720};
-    var settings=Object.assign({},defaults,load(K.set,{}));
     function applySettings(){
+      var settings=state.settings;
       document.documentElement.setAttribute('data-theme',settings.theme);
       var r=document.documentElement.style;
-      r.setProperty('--font', settings.font==='serif'?'var(--font-serif)':'var(--font-sans)');
-      r.setProperty('--fs', settings.fs+'px');
-      r.setProperty('--lh', settings.lh);
-      r.setProperty('--maxw', settings.w+'px');
-      // reflect UI
-      mark('#themeSeg .seg','data-theme',settings.theme);
-      mark('#fontSeg .seg','data-font',settings.font);
-      mark('#lhSeg .seg','data-lh',String(settings.lh));
-      mark('#wSeg .seg','data-w',String(settings.w));
-      var fb=document.getElementById('fsBar'); if(fb) fb.textContent=settings.fs+' px';
+      r.setProperty('--font',settings.font==='serif'?'var(--font-serif)':'var(--font-sans)');
+      r.setProperty('--fs',settings.fs+'px');r.setProperty('--lh',settings.lh);r.setProperty('--maxw',settings.w+'px');
+      mark('#themeSeg .seg','data-theme',settings.theme);mark('#fontSeg .seg','data-font',settings.font);
+      mark('#lhSeg .seg','data-lh',String(settings.lh));mark('#wSeg .seg','data-w',String(settings.w));
+      document.getElementById('fsBar').textContent=settings.fs+' px';
     }
     function mark(sel,attr,val){
       document.querySelectorAll(sel).forEach(function(b){
-        b.classList.toggle('on', b.getAttribute(attr)===val);
+        var on=b.getAttribute(attr)===val;b.classList.toggle('on',on);b.setAttribute('aria-pressed',String(on));
       });
     }
-    function saveSettings(){ save(K.set,settings); }
-
-    /* ---------- chapter lazy loader ---------- */
-    var _resolve=null;
-    window.__CH__=function(obj){ if(_resolve){ var r=_resolve; _resolve=null; r(obj); } };
-    function fetchChapter(i){
-      return new Promise(function(res,rej){
-        _resolve=res;
-        var old=document.getElementById('chScript'); if(old) old.remove();
-        var s=document.createElement('script');
-        s.id='chScript'; s.charset='utf-8';
-        s.src='data/ch_'+String(i).padStart(4,'0')+'.js';
-        s.onerror=function(){ _resolve=null; rej(new Error('load '+i)); };
-        document.head.appendChild(s);
-      });
-    }
-
-    /* ---------- rendering ---------- */
-    var cur=-1, curObj=null;
-    function renderChapter(obj){
-      curObj=obj;
-      var html='';
-      if(obj.v && obj.v!=='正文') html+='<span id="chGroup">'+esc(obj.v)+'</span>';
-      html+='<h1>'+esc(obj.t)+'</h1>';
-      for(var k=0;k<obj.p.length;k++){
-        var para=obj.p[k].split('\n');
-        for(var j=0;j<para.length;j++){
-          if(para[j]) html+='<p>'+esc(para[j])+'</p>';
-        }
+    function changeSetting(name,value){
+      var next=Object.assign({},state.settings);next[name]=value;
+      try{next=validateSettings(next);}catch(_){return;}
+      var ratio=getRatio();
+      if(persist(changed({settings:next}),false)){
+        applySettings();setRatio(ratio);updateProgress();
       }
-      article.innerHTML=html;
-      document.getElementById('curChap').textContent=obj.t;
-      updatePager();
-      highlightToc();
     }
-    function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-    function scroller(){ return document.scrollingElement||document.documentElement; }
-    function getRatio(){ var el=scroller(); var m=el.scrollHeight-el.clientHeight; return m>0?el.scrollTop/m:0; }
-    function setRatio(r){ var el=scroller(); var m=el.scrollHeight-el.clientHeight; window.scrollTo(0,Math.max(0,Math.min(m,r*m))); }
-
-    var busy=false;
-    function openChapter(i,ratio){
-      if(i<0||i>=CAT.entries.length) return Promise.resolve();
-      if(busy) return Promise.resolve();
-      busy=true;
-      return fetchChapter(i).then(function(obj){
-        cur=i;
-        renderChapter(obj);
-        requestAnimationFrame(function(){ requestAnimationFrame(function(){
-          setRatio(ratio||0);
-          busy=false;
-          saveAuto();
-          updateProgress();
-        });});
-      }).catch(function(){
-        busy=false;
-        article.innerHTML='<p style="text-align:center;color:var(--soft)">本章加载失败，请重试。</p>';
+    /* ---------- chapter lazy loader (works over file://) ---------- */
+    var pending=null;
+    window.__CH__=function(obj){
+      if(pending && document.currentScript===pending.script) pending.receive(obj);
+    };
+    function fetchChapter(i){
+      return new Promise(function(resolve,reject){
+        var script=document.createElement('script'),timer,finished=false;
+        function finish(error,obj){
+          if(finished)return;finished=true;clearTimeout(timer);script.remove();
+          if(pending && pending.script===script)pending=null;
+          if(error)reject(error);else resolve(obj);
+        }
+        pending={script:script,receive:function(obj){
+          if(!obj || obj.i!==i || obj.t!==CAT.entries[i].t || typeof obj.v!=='string' ||
+             !Array.isArray(obj.p) || !obj.p.every(function(p){return typeof p==='string';})){
+            finish(new Error('invalid chapter'));return;
+          }
+          finish(null,obj);
+        }};
+        script.id='chScript';script.charset='utf-8';script.src='data/ch_'+String(i).padStart(4,'0')+'.js';
+        script.onerror=function(){finish(new Error('load '+i));};
+        script.onload=function(){if(!finished)finish(new Error('missing chapter callback'));};
+        timer=setTimeout(function(){finish(new Error('chapter timeout'));},15000);
+        document.head.appendChild(script);
       });
     }
-    function prev(){ if(cur>0) openChapter(cur-1,0); }
-    function next(){ if(cur<CAT.entries.length-1) openChapter(cur+1,0); }
+    function node(tag,className,text){
+      var el=document.createElement(tag);if(className)el.className=className;
+      if(text!==undefined)el.textContent=text;return el;
+    }
+    function chapterFragment(obj){
+      var fragment=document.createDocumentFragment();
+      if(obj.v && obj.v!=='正文'){var group=node('span','',obj.v);group.id='chGroup';fragment.appendChild(group);}
+      fragment.appendChild(node('h1','',obj.t));
+      obj.p.forEach(function(paragraph){paragraph.split('\n').forEach(function(line){if(line)fragment.appendChild(node('p','',line));});});
+      return fragment;
+    }
+    var cur=-1,curObj=null,busy=false;
+    function scroller(){return document.scrollingElement||document.documentElement;}
+    function getRatio(){var el=scroller(),m=el.scrollHeight-el.clientHeight;return m>0?Math.max(0,Math.min(1,el.scrollTop/m)):1;}
+    function setRatio(r){var el=scroller(),m=Math.max(0,el.scrollHeight-el.clientHeight);window.scrollTo(0,Math.max(0,Math.min(m,r*m)));}
+    function openChapter(i,ratio,imported){
+      if(!Number.isInteger(i) || i<0 || i>=CAT.entries.length || busy)return Promise.resolve(false);
+      if(!imported)saveAuto();
+      busy=true;updatePager();
+      return fetchChapter(i).then(function(obj){
+        var fragment=chapterFragment(obj);
+        // Load and prepare first, then atomically persist an import before changing the page.
+        if(imported && !persist(imported,true)){busy=false;updatePager();return false;}
+        if(imported)applySettings();
+        cur=i;curObj=obj;article.replaceChildren(fragment);
+        document.getElementById('loadErr').style.display='none';
+        document.getElementById('curChap').textContent=obj.t;
+        updatePager();highlightToc();
+        return new Promise(function(resolve){requestAnimationFrame(function(){requestAnimationFrame(function(){
+          setRatio(typeof ratio==='number'?ratio:0);busy=false;saveAuto();updateProgress();updatePager();resolve(true);
+        });});});
+      }).catch(function(){
+        busy=false;updatePager();
+        if(cur<0){var el=document.getElementById('loadErr');el.style.display='block';el.textContent='本章加载失败。请检查 data 文件夹是否完整，然后刷新重试。';}
+        toast('本章加载失败，原阅读位置和书签已保留，请重试。');return false;
+      });
+    }
+    function prev(){if(cur>0)openChapter(cur-1,0);}
+    function next(){if(cur<CAT.entries.length-1)openChapter(cur+1,0);}
     function updatePager(){
-      document.getElementById('prevBtn').disabled = cur<=0;
-      document.getElementById('nextBtn').disabled = cur>=CAT.entries.length-1;
+      document.getElementById('prevBtn').disabled=cur<=0 || busy;
+      document.getElementById('nextBtn').disabled=busy || cur<0 || cur>=CAT.entries.length-1;
     }
-
-    /* ---------- progress ---------- */
     function updateProgress(){
-      var total=CAT.entries.length-1;
-      var pct=total>0 ? ((cur+getRatio())/total)*100 : 0;
-      pct=Math.max(0,Math.min(100,pct));
-      document.getElementById('progressfill').style.width=pct.toFixed(2)+'%';
+      var pct=cur<0?0:((cur+getRatio())/CAT.entries.length)*100;
+      document.getElementById('progressfill').style.width=Math.max(0,Math.min(100,pct)).toFixed(2)+'%';
     }
 
-    /* ---------- auto bookmark ---------- */
+    /* ---------- automatic and manual bookmarks ---------- */
     var lastSave=0;
     function saveAuto(){
-      if(cur<0) return;
-      save(K.auto,{i:cur,r:getRatio(),t:Date.now(),title:curObj?curObj.t:''});
+      if(cur<0 || busy)return;
+      var r=getRatio();
+      if(state.auto && state.auto.i===cur && Math.abs(state.auto.r-r)<0.00001)return;
+      persist(changed({auto:{i:cur,r:r,t:Date.now(),title:curObj.t}}),false,true);
     }
     function throttledSave(){
-      var now=Date.now();
-      if(now-lastSave>400){ lastSave=now; saveAuto(); updateProgress(); }
+      if(busy)return;updateProgress();
+      var now=Date.now();if(now-lastSave>400){lastSave=now;saveAuto();}
     }
-
-    /* ---------- manual bookmarks ---------- */
-    var marks=load(K.marks,[]);
     function firstVisibleSnippet(){
       var ps=article.getElementsByTagName('p');
-      var top=52;
-      for(var k=0;k<ps.length;k++){
-        var r=ps[k].getBoundingClientRect();
-        if(r.bottom>top+4){ return ps[k].textContent.slice(0,26); }
-      }
+      for(var k=0;k<ps.length;k++){if(ps[k].getBoundingClientRect().bottom>56)return ps[k].textContent.slice(0,26);}
       return ps.length?ps[0].textContent.slice(0,26):'';
     }
     function addMark(){
-      if(cur<0) return;
-      marks.unshift({id:Date.now(),i:cur,r:getRatio(),title:curObj?curObj.t:('第'+cur+'节'),snip:firstVisibleSnippet()});
-      save(K.marks,marks);
-      renderMarks();
-      toast('已添加书签');
-      var fm=document.getElementById('fabMark'); fm.classList.add('saved');
-      setTimeout(function(){ fm.classList.remove('saved'); },1200);
+      if(cur<0 || busy)return;
+      if(state.marks.length>=MAX_MARKS){toast('书签已达上限，请先导出备份并删除不需要的书签。');return;}
+      var id=Date.now();while(state.marks.some(function(m){return m.id===id;}))id++;
+      var added={id:id,i:cur,r:getRatio(),title:curObj.t,snip:firstVisibleSnippet()};
+      if(!persist(changed({marks:[added].concat(state.marks)}),false))return;
+      renderMarks();toast('已添加书签');
+      var fm=document.getElementById('fabMark');fm.classList.add('saved');setTimeout(function(){fm.classList.remove('saved');},1200);
     }
     function delMark(id){
-      marks=marks.filter(function(m){ return m.id!==id; });
-      save(K.marks,marks); renderMarks();
+      if(persist(changed({marks:state.marks.filter(function(m){return m.id!==id;})}),false))renderMarks();
+    }
+    function jumpButton(className,label,bookmark){
+      var button=node('button',className,label);
+      button.onclick=function(){closePanels();openChapter(bookmark.i,bookmark.r);};return button;
     }
     function renderMarks(){
-      var box=document.getElementById('marksBody');
-      var auto=load(K.auto,null);
-      var h='';
-      if(auto){
-        h+='<div class="autoBox"><div class="lbl">⏱ 自动书签 · 上次读到</div>'+
-           '<div class="ttl">'+esc(auto.title||'')+'</div>'+
-           '<button class="btnFull" data-jump="'+auto.i+'" data-r="'+(auto.r||0)+'">继续阅读</button></div>';
+      var box=document.getElementById('marksBody'),fragment=document.createDocumentFragment();
+      if(state.auto){
+        var autoBox=node('div','autoBox');autoBox.appendChild(node('div','lbl','⏱ 自动书签 · 上次读到'));
+        autoBox.appendChild(node('div','ttl',state.auto.title));
+        autoBox.appendChild(jumpButton('btnFull','继续阅读',state.auto));fragment.appendChild(autoBox);
       }
-      h+='<button class="addBtn" id="addMarkInline">＋ 在当前位置添加书签</button>';
-      if(!marks.length){
-        h+='<div class="empty">还没有手动书签。<br>阅读时点右下角 🔖 或此处按钮即可标记当前位置。</div>';
-      }else{
-        for(var k=0;k<marks.length;k++){
-          var m=marks[k];
-          h+='<div class="markCard"><button class="del" data-del="'+m.id+'" title="删除">✕</button>'+
-             '<div class="mt">'+esc(m.title)+'</div>'+
-             '<div class="ms">'+esc(m.snip||'')+'…</div>'+
-             '<div class="mmeta">'+fmtTime(m.id)+'</div>'+
-             '<button class="go" data-jump="'+m.i+'" data-r="'+m.r+'">跳转到此处</button></div>';
-        }
-      }
-      box.innerHTML=h;
+      var add=node('button','addBtn','＋ 在当前位置添加书签');add.id='addMarkInline';add.onclick=addMark;fragment.appendChild(add);
+      if(!state.marks.length)fragment.appendChild(node('div','empty','还没有手动书签。阅读时点右下角 🔖 或此处按钮即可标记当前位置。'));
+      state.marks.forEach(function(m){
+        var card=node('div','markCard'),del=node('button','del','✕');
+        del.title='删除';del.setAttribute('aria-label','删除书签：'+m.title);del.onclick=function(){delMark(m.id);};
+        card.appendChild(del);card.appendChild(node('div','mt',m.title));card.appendChild(node('div','ms',m.snip+'…'));
+        card.appendChild(node('div','mmeta',fmtTime(m.id)));card.appendChild(jumpButton('go','跳转到此处',m));fragment.appendChild(card);
+      });
+      // Imported strings are text nodes, never HTML or event-handler attributes.
+      box.replaceChildren(fragment);
     }
     function fmtTime(ts){
       var d=new Date(ts),p=function(n){return(n<10?'0':'')+n;};
       return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
     }
 
-    /* ---------- TOC ---------- */
+    /* ---------- TOC and accessible panels ---------- */
     function buildToc(){
-      var list=document.getElementById('tocList');
-      var h='',lastV=null;
-      for(var k=0;k<CAT.entries.length;k++){
-        var e=CAT.entries[k];
-        if(e.v!==lastV){ h+='<div class="volhd">'+esc(e.v)+'</div>'; lastV=e.v; }
-        h+='<div class="tocItem" data-idx="'+e.i+'"><span class="tt">'+esc(e.t)+'</span>'+
-           '<span class="wc">'+(e.n>=1000?(Math.round(e.n/100)/10)+'k':e.n)+'字</span></div>';
-      }
-      list.innerHTML=h;
+      var list=document.getElementById('tocList'),fragment=document.createDocumentFragment(),lastV=null;
+      CAT.entries.forEach(function(e,i){
+        if(e.v!==lastV){fragment.appendChild(node('div','volhd',e.v));lastV=e.v;}
+        var button=node('button','tocItem');button.type='button';button.dataset.idx=String(i);
+        button.appendChild(node('span','tt',e.t));button.appendChild(node('span','wc',(e.n>=1000?(Math.round(e.n/100)/10)+'k':e.n)+'字'));
+        fragment.appendChild(button);
+      });list.replaceChildren(fragment);
     }
     function highlightToc(){
       document.querySelectorAll('#tocList .tocItem').forEach(function(it){
-        var on=+it.getAttribute('data-idx')===cur;
-        it.classList.toggle('active',on);
-        if(on && document.getElementById('tocPanel').classList.contains('open')){
-          it.scrollIntoView({block:'center'});
-        }
+        var on=Number(it.dataset.idx)===cur;it.classList.toggle('active',on);
+        if(on)it.setAttribute('aria-current','true');else it.removeAttribute('aria-current');
+        if(on && document.getElementById('tocPanel').classList.contains('open'))it.scrollIntoView({block:'center'});
       });
     }
     function filterToc(q){
-      q=q.trim();
-      document.querySelectorAll('#tocList .tocItem').forEach(function(it){
-        var t=it.querySelector('.tt').textContent;
-        it.style.display=(!q||t.indexOf(q)>=0)?'':'none';
-      });
-      document.querySelectorAll('#tocList .volhd').forEach(function(v){
-        v.style.display=q?'none':'';
-      });
+      q=q.trim();document.querySelectorAll('#tocList .tocItem').forEach(function(it){
+        it.style.display=(!q || it.querySelector('.tt').textContent.indexOf(q)>=0)?'':'none';
+      });document.querySelectorAll('#tocList .volhd').forEach(function(v){v.style.display=q?'none':'';});
     }
-
-    /* ---------- panels ---------- */
-    var overlay=document.getElementById('overlay');
+    var overlay=document.getElementById('overlay'),activePanel=null,panelOpener=null;
+    var panelIds=['tocPanel','marksPanel','setPanel'],backgroundIds=['topbar','content','fabs'];
+    function setExpanded(id,value){document.querySelectorAll('[aria-controls="'+id+'"]').forEach(function(b){b.setAttribute('aria-expanded',String(value));});}
+    function closePanels(restoreFocus){
+      backgroundIds.forEach(function(id){document.getElementById(id).inert=false;});
+      if(restoreFocus!==false && panelOpener && document.contains(panelOpener))panelOpener.focus({preventScroll:true});
+      panelIds.forEach(function(id){var p=document.getElementById(id);p.classList.remove('open');p.inert=true;p.setAttribute('aria-hidden','true');setExpanded(id,false);});
+      activePanel=null;overlay.classList.remove('show');
+    }
     function openPanel(id){
-      closePanels();
-      document.getElementById(id).classList.add('open');
-      overlay.classList.add('show');
-      if(id==='marksPanel') renderMarks();
-      if(id==='tocPanel') highlightToc();
-    }
-    function closePanels(){
-      ['tocPanel','marksPanel','setPanel'].forEach(function(p){ document.getElementById(p).classList.remove('open'); });
-      overlay.classList.remove('show');
+      var opener=document.activeElement;closePanels(false);panelOpener=opener;
+      var panel=document.getElementById(id);activePanel=panel;panel.inert=false;panel.setAttribute('aria-hidden','false');panel.classList.add('open');
+      overlay.classList.add('show');setExpanded(id,true);
+      if(id==='marksPanel')renderMarks();if(id==='tocPanel')highlightToc();
+      var focus=id==='tocPanel'?document.getElementById('tocSearch'):panel.querySelector('button');
+      (focus||panel).focus({preventScroll:true});
+      backgroundIds.forEach(function(bg){document.getElementById(bg).inert=true;});
     }
 
     /* ---------- export / import ---------- */
+    var downloadUrls=new Set();
+    function releaseUrl(url){URL.revokeObjectURL(url);downloadUrls.delete(url);}
     function exportData(){
-      var data={app:'fanren-reader',v:1,auto:load(K.auto,null),marks:marks,settings:settings,exported:Date.now()};
-      var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-      var a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);
-      a.download='凡人修仙传-阅读进度.json';
-      document.body.appendChild(a); a.click(); a.remove();
-      toast('进度已导出');
+      var data=Object.assign({},state,{exported:Date.now()});
+      // Export the visible position even if browser storage is unavailable.
+      if(cur>=0 && !busy)data.auto={i:cur,r:getRatio(),t:Date.now(),title:curObj.t};
+      var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');
+      var url=URL.createObjectURL(blob);downloadUrls.add(url);a.href=url;
+      a.download=(CAT.title||'书籍').replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').slice(0,100)+'-阅读进度.json';
+      document.body.appendChild(a);a.click();a.remove();setTimeout(function(){releaseUrl(url);},1000);toast('进度已导出');
     }
     function importData(file){
+      if(busy){toast('章节正在加载，请稍后再导入。');return;}
       var fr=new FileReader();
+      fr.onerror=function(){toast('导入失败：无法读取文件，原进度未改变。');};
       fr.onload=function(){
+        var next,isLegacy=false;
         try{
-          var d=JSON.parse(fr.result);
-          if(d.auto) save(K.auto,d.auto);
-          if(d.marks){ marks=d.marks; save(K.marks,marks); }
-          if(d.settings){ settings=Object.assign({},defaults,d.settings); saveSettings(); applySettings(); }
-          renderMarks(); toast('进度已导入');
-          if(d.auto) openChapter(d.auto.i,d.auto.r||0);
-        }catch(_){ toast('文件无法识别'); }
+          var value=JSON.parse(fr.result);
+          if(value && value.app==='fanren-reader' && value.v===1){next=validateLegacy(value,true);isLegacy=true;}
+          else next=validateState(value,true);
+        }catch(_){toast('导入失败：格式无效或不属于本书，原进度未改变。');return;}
+        if(busy){toast('章节正在加载，请稍后再导入。');return;}
+        if(isLegacy && !confirmLegacy()){toast('已取消导入，原进度未改变。');return;}
+        if(next.auto){
+          openChapter(next.auto.i,next.auto.r,next).then(function(ok){if(ok){renderMarks();toast('进度已导入');}});
+        }else if(persist(next,true)){applySettings();renderMarks();toast('进度已导入');}
       };
       fr.readAsText(file);
     }
 
-    /* ---------- toast ---------- */
-    var toastEl=document.getElementById('toast'),toastT=null;
-    function toast(msg){
-      toastEl.textContent=msg; toastEl.classList.add('show');
-      clearTimeout(toastT); toastT=setTimeout(function(){ toastEl.classList.remove('show'); },1600);
-    }
-
     /* ---------- events ---------- */
-    document.getElementById('btnToc').onclick=function(){ openPanel('tocPanel'); };
-    document.getElementById('tocBtn2').onclick=function(){ openPanel('tocPanel'); };
-    document.getElementById('btnMarks').onclick=function(){ openPanel('marksPanel'); };
-    document.getElementById('btnSettings').onclick=function(){ openPanel('setPanel'); };
-    overlay.onclick=closePanels;
-    document.querySelectorAll('[data-close]').forEach(function(b){ b.onclick=closePanels; });
-
-    document.getElementById('prevBtn').onclick=prev;
-    document.getElementById('nextBtn').onclick=next;
-    document.getElementById('fabTop').onclick=function(){ window.scrollTo({top:0,behavior:'smooth'}); };
-    document.getElementById('fabBottom').onclick=function(){ var el=scroller(); window.scrollTo({top:el.scrollHeight,behavior:'smooth'}); };
+    document.getElementById('btnToc').onclick=function(){openPanel('tocPanel');};
+    document.getElementById('tocBtn2').onclick=function(){openPanel('tocPanel');};
+    document.getElementById('btnMarks').onclick=function(){openPanel('marksPanel');};
+    document.getElementById('btnSettings').onclick=function(){openPanel('setPanel');};
+    overlay.onclick=function(){closePanels();};
+    document.querySelectorAll('[data-close]').forEach(function(b){b.onclick=function(){closePanels();};});
+    document.getElementById('prevBtn').onclick=prev;document.getElementById('nextBtn').onclick=next;
+    document.getElementById('fabTop').onclick=function(){window.scrollTo({top:0,behavior:'smooth'});};
+    document.getElementById('fabBottom').onclick=function(){window.scrollTo({top:scroller().scrollHeight,behavior:'smooth'});};
     document.getElementById('fabMark').onclick=addMark;
-
-    document.getElementById('tocList').onclick=function(ev){
-      var it=ev.target.closest('.tocItem'); if(!it) return;
-      closePanels(); openChapter(+it.getAttribute('data-idx'),0);
-    };
-    document.getElementById('tocSearch').oninput=function(){ filterToc(this.value); };
-
-    document.getElementById('marksBody').onclick=function(ev){
-      var t=ev.target;
-      if(t.id==='addMarkInline'){ addMark(); return; }
-      if(t.hasAttribute('data-del')){ delMark(+t.getAttribute('data-del')); return; }
-      var jb=t.closest('[data-jump]');
-      if(jb){ closePanels(); openChapter(+jb.getAttribute('data-jump'),parseFloat(jb.getAttribute('data-r'))||0); }
-    };
-
+    document.getElementById('tocList').onclick=function(ev){var it=ev.target.closest('.tocItem');if(it){closePanels();openChapter(Number(it.dataset.idx),0);}};
+    document.getElementById('tocSearch').oninput=function(){filterToc(this.value);};
     document.getElementById('exportBtn').onclick=exportData;
-    document.getElementById('importBtn').onclick=function(){ document.getElementById('importFile').click(); };
-    document.getElementById('importFile').onchange=function(){ if(this.files[0]) importData(this.files[0]); this.value=''; };
-
-    // settings interactions
-    document.getElementById('themeSeg').onclick=function(ev){ var b=ev.target.closest('.seg'); if(!b)return; settings.theme=b.getAttribute('data-theme'); applySettings(); saveSettings(); };
-    document.getElementById('fontSeg').onclick=function(ev){ var b=ev.target.closest('.seg'); if(!b)return; settings.font=b.getAttribute('data-font'); applySettings(); saveSettings(); };
-    document.getElementById('lhSeg').onclick=function(ev){ var b=ev.target.closest('.seg'); if(!b)return; settings.lh=parseFloat(b.getAttribute('data-lh')); applySettings(); saveSettings(); };
-    document.getElementById('wSeg').onclick=function(ev){ var b=ev.target.closest('.seg'); if(!b)return; settings.w=parseInt(b.getAttribute('data-w'),10); applySettings(); saveSettings(); };
-    document.getElementById('fsPlus').onclick=function(){ settings.fs=Math.min(32,settings.fs+1); applySettings(); saveSettings(); };
-    document.getElementById('fsMinus').onclick=function(){ settings.fs=Math.max(14,settings.fs-1); applySettings(); saveSettings(); };
-
-    // keyboard
-    document.addEventListener('keydown',function(e){
-      if(e.target.tagName==='INPUT') return;
-      if(e.key==='ArrowLeft'){ prev(); }
-      else if(e.key==='ArrowRight'){ next(); }
-      else if(e.key==='b'||e.key==='B'){ addMark(); }
+    document.getElementById('importBtn').onclick=function(){document.getElementById('importFile').click();};
+    document.getElementById('importFile').onchange=function(){if(this.files[0])importData(this.files[0]);this.value='';};
+    ['theme','font','lh','w'].forEach(function(name){
+      document.getElementById(name+'Seg').onclick=function(ev){var b=ev.target.closest('.seg');if(b)changeSetting(name,(name==='lh'||name==='w')?Number(b.getAttribute('data-'+name)):b.getAttribute('data-'+name));};
     });
-
-    // save position on scroll / exit
+    document.getElementById('fsPlus').onclick=function(){changeSetting('fs',Math.min(32,state.settings.fs+1));};
+    document.getElementById('fsMinus').onclick=function(){changeSetting('fs',Math.max(14,state.settings.fs-1));};
+    document.addEventListener('keydown',function(e){
+      if(activePanel){
+        if(e.key==='Escape'){e.preventDefault();closePanels();return;}
+        if(e.key==='Tab'){
+          var focusable=Array.from(activePanel.querySelectorAll('button:not(:disabled),input:not([type="file"]),[tabindex="0"]')).filter(function(el){return el.getClientRects().length>0;});
+          var first=focusable[0],last=focusable[focusable.length-1];
+          if(!first){e.preventDefault();activePanel.focus();}
+          else if(e.shiftKey && (document.activeElement===first || document.activeElement===activePanel)){e.preventDefault();last.focus();}
+          else if(!e.shiftKey && document.activeElement===last){e.preventDefault();first.focus();}
+        }
+        return;
+      }
+      if(e.ctrlKey || e.altKey || e.metaKey || e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))return;
+      if(e.key==='ArrowLeft'){e.preventDefault();prev();}
+      else if(e.key==='ArrowRight'){e.preventDefault();next();}
+      else if(e.key==='b'||e.key==='B'){e.preventDefault();addMark();}
+    });
     window.addEventListener('scroll',throttledSave,{passive:true});
+    window.addEventListener('resize',updateProgress);
     window.addEventListener('beforeunload',saveAuto);
-    window.addEventListener('pagehide',saveAuto);
-    document.addEventListener('visibilitychange',function(){ if(document.hidden) saveAuto(); });
+    window.addEventListener('pagehide',function(){saveAuto();downloadUrls.forEach(releaseUrl);});
+    document.addEventListener('visibilitychange',function(){if(document.hidden)saveAuto();});
     setInterval(saveAuto,5000);
 
     /* ---------- boot ---------- */
-    document.title=(CAT.title||'离线阅读器')+' · 阅读器';
-    document.getElementById('bookTitle').textContent=CAT.title||'';
-    applySettings();
-    buildToc();
-    var auto=load(K.auto,null);
-    if(auto && auto.i!=null && auto.i<CAT.entries.length){
-      openChapter(auto.i,auto.r||0).then(function(){ toast('已回到上次阅读位置'); });
-    }else{
-      openChapter(0,0);
-    }
-   })();
+    loadState();
+    document.title=(CAT.title||'离线阅读器')+' · 阅读器';document.getElementById('bookTitle').textContent=CAT.title||'';
+    applySettings();buildToc();updatePager();
+    var auto=state.auto;
+    openChapter(auto?auto.i:0,auto?auto.r:0).then(function(ok){
+      updatePager();
+      if(bootNotice)toast(bootNotice);else if(ok && auto)toast('已回到上次阅读位置');
+    });
+  })();
   </script>
 </body>
 </html>

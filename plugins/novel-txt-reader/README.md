@@ -1,7 +1,7 @@
 # novel-txt-reader (plugin)
 
 A Cowork/Claude plugin that turns a plain-text `.txt` novel into a lightweight **offline
-HTML reader** — split by chapter, re-encoded as UTF-8 (no 乱码), with automatic and manual
+HTML reader** — split by chapter, re-encoded as UTF-8, with automatic and manual
 bookmarks.
 
 ## Components
@@ -20,5 +20,11 @@ with `开始阅读.html` (open in a browser), `使用说明.txt`, and per-chapte
 
 ## Setup
 
-No credentials required. Optional: `pip install chardet` for better encoding detection.
-Reading needs only a web browser.
+No credentials or Python packages are required. Ambiguous source encodings need an
+explicit override, such as `--encoding big5`; invalid bytes stop conversion instead of
+being silently replaced. Reading needs only a web browser.
+
+Version 0.1.2 validates progress imports, separates progress by book, preserves normal
+prose and unrelated output files, and protects existing readers from ordinary failed
+rebuilds. Back up progress before regenerating an old reader; legacy progress migration
+requires confirmation. See the [repository README](../../README.md) for details and tests.

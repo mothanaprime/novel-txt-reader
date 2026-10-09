@@ -1,0 +1,12 @@
+{
+  "name": "novel-txt-reader-tests",
+  "private": true,
+  "description": "Regression tests for the offline Novel TXT Reader",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "npm run test:python && npm run test:browser",
+    "test:python": "node scripts/test-python.cjs",
+    "test:browser": "node --test plugins/novel-txt-reader/skills/novel-txt-reader/tests/test_reader.js"
+  },
+  "devDependencies": { "playwright": "1.62.1" }
+}
