@@ -4,9 +4,10 @@
 build_reader.py — Turn a .txt novel into a lightweight offline HTML reader.
 
 Usage:
-    python build_reader.py <input.txt> [output_dir]
+    python build_reader.py <input.txt> [output_dir] [--encoding big5]
 
-- Auto-detects encoding (UTF-8/UTF-16/GBK/GB18030/Big5) and outputs UTF-8 (no 乱码).
+- Detects UTF-8/UTF-16 and common Chinese encodings; ambiguous input requires
+  --encoding. Decoding is strict, never silently replacing damaged characters.
 - Splits the book by its dominant chapter unit (章 / 回 / 节 / Chapter), groups by
   volume (卷 / 部 / 集), and keeps special sections (楔子 / 序 / 番外 / 外传 …).
 - Writes one small file per chapter so the reader loads only one chapter at a time.
@@ -15,80 +16,120 @@ Usage:
 
 If no chapter markers are found, the text is split into ~equal parts as a fallback.
 """
-import os, re, sys, json, shutil
+import argparse
+import codecs
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import tempfile
 
 CJK_NUM = '〇零一二三四五六七八九十百千万亿兩两0-9０-９'
 CHAP_UNITS = [
     ('章', re.compile(r'^第\s*[' + CJK_NUM + r']+\s*章')),
     ('回', re.compile(r'^第\s*[' + CJK_NUM + r']+\s*回')),
     ('节', re.compile(r'^第\s*[' + CJK_NUM + r']+\s*节')),
-    ('EN', re.compile(r'^(?:chapter|Chapter|CHAPTER)\s+[0-9IVXLCivxlc]+')),
+    ('EN', re.compile(r'^chapter\s+(?:[0-9]+|[IVXLC]+)(?=$|[\s:：.、\-—])', re.I)),
 ]
-VOL_RE = re.compile(r'^第\s*[' + CJK_NUM + r']+\s*[卷部集]')
+HEADER_BOUNDARY = r'(?=$|[\s:：·・.、\-—])'
+VOL_RE = re.compile(r'^第\s*[' + CJK_NUM + r']+\s*[卷部集]' + HEADER_BOUNDARY)
 SPECIAL_PREFIX = ('楔子', '序章', '序言', '序幕', '引子', '前言', '尾声', '终章',
                   '大结局', '后记', '後記', '作者的话', '番外', '外传', '外傳')
 # 番外/外传 that follow a short book-name prefix, e.g. "凡人外传·仙界篇 一".
 # Requires the marker within the first few chars AND followed by a separator,
 # so narrative lines like "厅外传来了脚步声" are NOT matched.
 FANWAI_RE = re.compile(r'^.{1,4}(?:番外|外传|外傳)(?:[·・.、\s0-9〇零一二三四五六七八九十]|$)')
-AD_KEYWORDS = ('http://', 'https://', 'www.', '.com', '.net', '.cn', '.org')
-SEP_CHARS = set('=＝-—–_～~*·. 　\t')
+SPECIAL_RE = re.compile(r'^(?:' + '|'.join(SPECIAL_PREFIX) + r')' + HEADER_BOUNDARY)
+NUMBERED_SPECIAL_RE = re.compile(r'^(?:番外|外传|外傳)[' + CJK_NUM + r']+' + HEADER_BOUNDARY)
+MANIFEST = '.novel-txt-reader.json'
+CHAPTER_FILE_RE = re.compile(r'data/ch_[0-9]{4,}\.js\Z')
 
 
-def detect_decode(raw):
-    """Return (text, encoding_label)."""
-    if raw[:3] == b'\xef\xbb\xbf':
-        return raw[3:].decode('utf-8', 'replace'), 'utf-8-sig'
-    if raw[:2] == b'\xff\xfe':
-        return raw.decode('utf-16', 'replace'), 'utf-16-le'
-    if raw[:2] == b'\xfe\xff':
-        return raw.decode('utf-16', 'replace'), 'utf-16-be'
-    guess = None
+def _decode_strict(raw, encoding):
+    text = raw.decode(encoding, errors='strict')
+    if text.startswith('\ufeff'):
+        text = text[1:]
+    if any((ord(c) < 32 and c not in '\t\n\r\f') or 127 <= ord(c) < 160
+           for c in text):
+        raise ValueError('Input contains unexpected control characters; check its encoding.')
+    return text
+
+
+def _heading_score(text):
+    return sum(1 for line in text.splitlines()
+               if any(is_heading(line.strip(), pat) for _, pat in CHAP_UNITS)
+               or is_heading(line.strip(), VOL_RE) or is_special(line.strip()))
+
+
+def detect_decode(raw, encoding=None):
+    """Return (text, encoding_label), requiring an override when undecidable.
+
+    GB18030 and Big5 have overlapping byte ranges: successful decoding alone is
+    not evidence of the correct encoding. Clear heading evidence can distinguish
+    common novels; arbitrary short prose must be selected explicitly.
+    """
+    if encoding:
+        label = codecs.lookup(encoding).name
+        return _decode_strict(raw, label), label
+    for bom, codec, label in (
+        (codecs.BOM_UTF32_LE, 'utf-32', 'utf-32-le'),
+        (codecs.BOM_UTF32_BE, 'utf-32', 'utf-32-be'),
+        (codecs.BOM_UTF8, 'utf-8-sig', 'utf-8-sig'),
+        (codecs.BOM_UTF16_LE, 'utf-16', 'utf-16-le'),
+        (codecs.BOM_UTF16_BE, 'utf-16', 'utf-16-be'),
+    ):
+        if raw.startswith(bom):
+            return _decode_strict(raw, codec), label
+
+    # BOM-less UTF-16 is only inferred from consistent ASCII/newline NUL pairs.
+    if b'\x00' in raw and len(raw) % 2 == 0:
+        even, odd = raw[::2].count(0), raw[1::2].count(0)
+        le_lines = sum(a in (10, 13) and b == 0 for a, b in zip(raw[::2], raw[1::2]))
+        be_lines = sum(a == 0 and b in (10, 13) for a, b in zip(raw[::2], raw[1::2]))
+        if (le_lines and not be_lines) or (odd >= 2 and odd > even * 4):
+            return _decode_strict(raw, 'utf-16-le'), 'utf-16-le'
+        if (be_lines and not le_lines) or (even >= 2 and even > odd * 4):
+            return _decode_strict(raw, 'utf-16-be'), 'utf-16-be'
     try:
-        import chardet
-        g = chardet.detect(raw[:400000])
-        if g and g.get('encoding') and (g.get('confidence') or 0) >= 0.7:
-            guess = g['encoding']
-    except Exception:
+        return _decode_strict(raw, 'utf-8'), 'utf-8'
+    except (UnicodeError, ValueError):
         pass
-    order = []
-    if guess:
-        gl = guess.lower()
-        if gl in ('gb2312', 'gbk', 'gb18030'):
-            order.append('gb18030')
-        elif gl in ('big5', 'big5-hkscs'):
-            order.append('big5hkscs')
-        else:
-            order.append(guess)
-    order += ['utf-8', 'gb18030', 'big5hkscs', 'utf-16']
-    seen = set()
-    for enc in order:
-        if not enc or enc in seen:
-            continue
-        seen.add(enc)
+    candidates = []
+    for codec in ('gb18030', 'big5hkscs'):
         try:
-            return raw.decode(enc), enc
-        except Exception:
-            continue
-    return raw.decode('gb18030', 'replace'), 'gb18030(replace)'
+            candidates.append((_decode_strict(raw, codec), codec))
+        except (UnicodeError, ValueError):
+            pass
+    if len(candidates) == 1 or (len(candidates) == 2 and candidates[0][0] == candidates[1][0]):
+        return candidates[0]
+    if candidates:
+        scores = [_heading_score(text) for text, _ in candidates]
+        winner = max(range(len(scores)), key=scores.__getitem__)
+        if scores[winner] >= 2 and all(score == 0 for i, score in enumerate(scores) if i != winner):
+            return candidates[winner]
+        raise ValueError('Ambiguous text encoding (GB18030 or Big5). '
+                         'Retry with --encoding gb18030 or --encoding big5.')
+    raise ValueError('Cannot decode input without data loss. Check the source file '
+                     'and specify its encoding with --encoding.')
+
+
+def is_heading(s, pattern):
+    # Compact numbered chapter titles remain supported, but ordinary sentences
+    # are not headings. Question marks are valid in titles (e.g. 为什么？).
+    return bool(s and len(s) <= 40 and not re.search(r'[。；;，,]', s)
+                and pattern.match(s))
 
 
 def is_special(s):
-    if len(s) > 16:
-        return False
-    if any(s.startswith(t) for t in SPECIAL_PREFIX):
-        return True
-    return bool(FANWAI_RE.match(s))
+    return any(is_heading(s, pat) for pat in (SPECIAL_RE, NUMBERED_SPECIAL_RE, FANWAI_RE))
 
 
 def is_junk(s):
-    if not s:
-        return True
-    if set(s) <= SEP_CHARS:
-        return True
-    if len(s) < 60 and any(k in s for k in AD_KEYWORDS):
-        return True
-    return False
+    """Only blank lines are omitted; URLs and separators are legitimate text."""
+    return not s
 
 
 def derive_title_author(path, text):
@@ -113,7 +154,7 @@ def pick_unit(lines):
         if not s or len(s) > 40:
             continue
         for k, pat in CHAP_UNITS:
-            if pat.match(s):
+            if is_heading(s, pat):
                 counts[k] += 1
                 break
     best = max(counts, key=counts.get)
@@ -126,14 +167,26 @@ def split_chapters(lines, unit):
     def is_chapter(s):
         if len(s) > 40:
             return False
-        if unit_pat and unit_pat.match(s):
+        if unit_pat and is_heading(s, unit_pat):
             return True
         return is_special(s)
 
+    # Only consume a volume heading when a numbered chapter will actually use
+    # it. A final volume line or a superseded heading stays in its original place.
+    volumes, next_numbered = set(), False
+    for index in range(len(lines) - 1, -1, -1):
+        s = lines[index].strip()
+        if unit_pat and is_heading(s, unit_pat):
+            next_numbered = True
+        elif is_heading(s, VOL_RE):
+            if next_numbered:
+                volumes.add(index)
+            next_numbered = False
+
     chapters, cur, cur_vol, front, started = [], None, '', [], False
-    for ln in lines:
+    for index, ln in enumerate(lines):
         s = ln.strip()
-        if VOL_RE.match(s) and len(s) <= 40:
+        if index in volumes:
             cur_vol = s
             continue
         if is_chapter(s):
@@ -177,9 +230,128 @@ def safe(s):
     return s.replace(' ', '\n').replace(' ', '\n')
 
 
-def build(input_path, out_dir):
-    raw = open(input_path, 'rb').read()
-    text, enc = detect_decode(raw)
+def _assert_safe_path(path):
+    """Reject symlinks and Windows junction/reparse points, including ancestors."""
+    for part in (path, *path.parents):
+        try:
+            info = part.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(info.st_mode) or (getattr(info, 'st_file_attributes', 0)
+                                        & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 1024)):
+            raise ValueError('Refusing to write through a symlink or reparse point: %s' % part)
+
+
+def _managed_name(name):
+    return isinstance(name, str) and (name in ('data/catalog.js', '开始阅读.html', '使用说明.txt')
+                                     or bool(CHAPTER_FILE_RE.fullmatch(name)))
+
+
+def _generated_json(path, prefix, suffix):
+    _assert_safe_path(path)
+    data = path.read_text(encoding='utf-8')
+    if not data.startswith(prefix) or not data.endswith(suffix):
+        raise ValueError('Unrecognized existing generated file: %s' % path)
+    return json.loads(data[len(prefix):-len(suffix)])
+
+
+def _owned_files(out):
+    manifest = out / MANIFEST
+    _assert_safe_path(manifest)
+    if manifest.exists():
+        metadata = json.loads(manifest.read_text(encoding='utf-8'))
+        names = metadata.get('files') if isinstance(metadata, dict) else None
+        if (not isinstance(metadata, dict) or metadata.get('generator') != 'novel-txt-reader' or metadata.get('version') != 1
+                or not isinstance(names, list) or not all(_managed_name(name) for name in names)
+                or len(names) != len(set(names))):
+            raise ValueError('Invalid reader output manifest: %s' % manifest)
+        return set(names) | {MANIFEST}
+
+    # Migrate pre-manifest readers only by validating their catalog and referenced
+    # chapter payloads. Merely starting with "ch_" never makes a file ours.
+    catalog_path = out / 'data' / 'catalog.js'
+    if not catalog_path.exists():
+        return set()
+    catalog = _generated_json(catalog_path, 'window.__CATALOG__=', ';')
+    entries = catalog.get('entries') if isinstance(catalog, dict) else None
+    if not isinstance(entries, list) or not entries:
+        raise ValueError('Cannot safely identify the existing reader catalog.')
+    owned = {'data/catalog.js'}
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict) or type(entry.get('i')) is not int or entry['i'] != index:
+            raise ValueError('Cannot safely identify the existing reader chapters.')
+        name = 'data/ch_%04d.js' % index
+        path = out / name
+        _assert_safe_path(path)
+        if path.exists():
+            chapter = _generated_json(path, 'window.__CH__(', ');')
+            if (not isinstance(chapter, dict) or chapter.get('i') != index
+                    or chapter.get('t') != entry.get('t') or not isinstance(chapter.get('p'), list)):
+                raise ValueError('Unrecognized existing chapter: %s' % path)
+            owned.add(name)
+    for name in ('开始阅读.html', '使用说明.txt'):
+        path = out / name
+        _assert_safe_path(path)
+        if path.exists():
+            data = path.read_text(encoding='utf-8-sig')
+            recognized = ('window.__CATALOG__' in data and 'data/catalog.js' in data
+                          if name.endswith('.html') else '离线阅读器使用说明' in data)
+            if not recognized:
+                raise ValueError('Refusing to overwrite unrelated file: %s' % path)
+            owned.add(name)
+    return owned
+
+
+def _promote(stage, out, new_files):
+    old_files = _owned_files(out)
+    affected = old_files | new_files
+    for name in sorted(affected):
+        path = out / name
+        _assert_safe_path(path)
+        if path.exists() and (not path.is_file() or name not in old_files):
+            raise ValueError('Refusing to overwrite unrelated file: %s' % path)
+    data_dir = out / 'data'
+    _assert_safe_path(data_dir)
+    data_was_present = data_dir.exists()
+    backup = stage / 'previous'
+    moved, installed = [], []
+    created_data = False
+    try:
+        data_dir.mkdir(exist_ok=True)
+        created_data = not data_was_present
+        for name in sorted(affected):
+            path = out / name
+            _assert_safe_path(path)
+            if path.exists():
+                destination = backup / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(path, destination)
+                moved.append(name)
+        for name in sorted(new_files):
+            _assert_safe_path(out / name)
+            os.replace(stage / name, out / name)
+            installed.append(name)
+    except BaseException:
+        # Keep the backup directory if even rollback fails (e.g. hardware loss).
+        # The caller must not remove the only remaining copy of previous output.
+        try:
+            for name in reversed(installed):
+                _assert_safe_path(out / name)
+                (out / name).unlink()
+            for name in reversed(moved):
+                _assert_safe_path(out / name)
+                os.replace(backup / name, out / name)
+            if created_data:
+                data_dir.rmdir()
+        except BaseException as rollback_error:
+            raise RuntimeError('Output rollback failed; previous files are preserved in %s'
+                               % backup) from rollback_error
+        raise
+
+
+def build(input_path, out_dir, encoding=None):
+    raw = Path(input_path).read_bytes()
+    text, enc = detect_decode(raw, encoding)
     text = text.replace('\r\n', '\n').replace('\r', '\n')
     lines = text.split('\n')
     title, author = derive_title_author(input_path, text)
@@ -200,26 +372,10 @@ def build(input_path, out_dir):
     for idx, e in enumerate(entries):
         e['i'] = idx
 
-    data_dir = os.path.join(out_dir, 'data')
-    os.makedirs(data_dir, exist_ok=True)
-    for f in os.listdir(data_dir):
-        if f.startswith('ch_') or f == 'catalog.js':
-            os.remove(os.path.join(data_dir, f))
-
-    for e in entries:
-        obj = {'i': e['i'], 't': e['t'], 'v': e['v'], 'p': [safe(p) for p in e['p']]}
-        with open(os.path.join(data_dir, 'ch_%04d.js' % e['i']), 'w', encoding='utf-8') as f:
-            f.write('window.__CH__(' + json.dumps(obj, ensure_ascii=False) + ');')
-
     catalog = {'title': title, 'author': author,
+               'bookId': hashlib.sha256(text.encode('utf-8')).hexdigest(),
                'entries': [{'i': e['i'], 't': e['t'], 'v': e['v'],
                             'n': sum(len(p) for p in e['p'])} for e in entries]}
-    with open(os.path.join(data_dir, 'catalog.js'), 'w', encoding='utf-8') as f:
-        f.write('window.__CATALOG__=' + json.dumps(catalog, ensure_ascii=False) + ';')
-
-    here = os.path.dirname(os.path.abspath(__file__))
-    shutil.copyfile(os.path.join(here, 'reader_template.html'),
-                    os.path.join(out_dir, '开始阅读.html'))
 
     guide = (
         '%s — 离线阅读器使用说明\n'
@@ -234,8 +390,38 @@ def build(input_path, out_dir):
         '【重要】请保持「开始阅读.html」与「data」文件夹在一起、不要改名；\n'
         '移动时请整个文件夹一起移动。全部文件为 UTF-8 编码，无乱码。\n'
     ) % (title, len(entries))
-    with open(os.path.join(out_dir, '使用说明.txt'), 'w', encoding='utf-8-sig') as f:
-        f.write(guide)
+    out = Path(os.path.abspath(out_dir))
+    _assert_safe_path(out)
+    _assert_safe_path(out / 'data')
+    out.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix='.reader-build-', dir=out))
+    keep_backup = False
+    try:
+        (stage / 'data').mkdir()
+        files = {'data/catalog.js', '开始阅读.html', '使用说明.txt'}
+        for e in entries:
+            obj = {'i': e['i'], 't': e['t'], 'v': e['v'], 'p': [safe(p) for p in e['p']]}
+            name = 'data/ch_%04d.js' % e['i']
+            (stage / name).write_text('window.__CH__(' + json.dumps(obj, ensure_ascii=False) + ');',
+                                      encoding='utf-8')
+            files.add(name)
+        (stage / 'data/catalog.js').write_text('window.__CATALOG__='
+                                             + json.dumps(catalog, ensure_ascii=False) + ';',
+                                             encoding='utf-8')
+        here = Path(__file__).resolve().parent
+        shutil.copyfile(here / 'reader_template.html', stage / '开始阅读.html')
+        (stage / '使用说明.txt').write_text(guide, encoding='utf-8-sig')
+        (stage / MANIFEST).write_text(json.dumps({'generator': 'novel-txt-reader', 'version': 1,
+                                                'files': sorted(files)}, ensure_ascii=False),
+                                     encoding='utf-8')
+        try:
+            _promote(stage, out, files | {MANIFEST})
+        except RuntimeError:
+            keep_backup = True
+            raise
+    finally:
+        if not keep_backup:
+            shutil.rmtree(stage)
 
     total = sum(sum(len(p) for p in e['p']) for e in entries)
     print('  book       : %s%s' % (title, ('  作者:' + author) if author else ''))
@@ -248,21 +434,25 @@ def build(input_path, out_dir):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        raise SystemExit(1)
-    input_path = sys.argv[1]
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('input_path', help='Input TXT file')
+    parser.add_argument('output_dir', nargs='?', help='Output reader directory')
+    parser.add_argument('--encoding', help='Explicit strict input codec, e.g. big5, gb18030, utf-16-le')
+    args = parser.parse_args()
+    input_path = args.input_path
     if not os.path.isfile(input_path):
         raise SystemExit('File not found: %s' % input_path)
-    if len(sys.argv) >= 3:
-        out_dir = sys.argv[2]
+    if args.output_dir:
+        out_dir = args.output_dir
     else:
         base = os.path.splitext(os.path.basename(input_path))[0]
         title, _ = derive_title_author(input_path, '')
         out_dir = os.path.join(os.path.dirname(os.path.abspath(input_path)), title or base)
-    os.makedirs(out_dir, exist_ok=True)
     print('Building reader...')
-    build(input_path, out_dir)
+    try:
+        build(input_path, out_dir, args.encoding)
+    except (OSError, ValueError, LookupError) as error:
+        parser.exit(1, 'Build failed: %s\n' % error)
     print('Done. Open %s/开始阅读.html in your browser.' % out_dir)
 
 

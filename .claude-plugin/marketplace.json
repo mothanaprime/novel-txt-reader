@@ -3,14 +3,14 @@
   "owner": { "name": "mothanaprime" },
   "metadata": {
     "description": "Personal marketplace hosting the novel-txt-reader plugin.",
-    "version": "0.1.1"
+    "version": "0.1.2"
   },
   "plugins": [
     {
       "name": "novel-txt-reader",
       "source": "./plugins/novel-txt-reader",
-      "description": "Turn a .txt novel into a lightweight offline HTML reader: auto-detect encoding, split by chapter, auto + manual bookmarks, themes and fonts.",
-      "version": "0.1.1",
+      "description": "Turn a .txt novel into a lightweight offline HTML reader: strict decoding with an explicit encoding override, chapter splitting, auto + manual bookmarks, themes and fonts. Includes a portable agent skill.",
+      "version": "0.1.2",
       "author": { "name": "mothanaprime" },
       "keywords": ["novel","reader","txt","chinese","ebook","bookmark","encoding"]
     }
